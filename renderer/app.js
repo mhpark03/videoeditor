@@ -2264,28 +2264,11 @@ async function selectLocalVideoFile() {
   }
 }
 
-// Import video
+// Import video (Local mode - directly open file dialog)
 async function importVideo() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      const videoPath = await window.electronAPI.selectVideo();
-      if (!videoPath) return;
-      await loadVideoWithAudioCheck(videoPath);
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
-  }
-
-  // User is logged in - give them a choice between S3 and local file
-  await showVideoSourceSelectionModal();
+  const videoPath = await window.electronAPI.selectVideo();
+  if (!videoPath) return;
+  await loadVideoWithAudioCheck(videoPath);
 }
 
 // Show modal to select video source (S3 or Local)
@@ -4788,27 +4771,11 @@ let mergePreviewIndex = 0;
 let isMergePreviewPlaying = false;
 
 async function addVideoToMerge() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      const videoPath = await window.electronAPI.selectVideo();
-      if (!videoPath) return;
-      mergeVideos.push(videoPath);
-      updateMergeFileList();
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
-  }
-
-  // Show video list from S3 for merge
-  await showVideoListForMerge();
+  // Local mode - directly open file dialog
+  const videoPath = await window.electronAPI.selectVideo();
+  if (!videoPath) return;
+  mergeVideos.push(videoPath);
+  updateMergeFileList();
 }
 
 function updateMergeFileList() {
@@ -4999,27 +4966,11 @@ async function executeMerge() {
 
 // Audio merge functions
 async function addAudioToMerge() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      const audioPath = await window.electronAPI.selectAudio();
-      if (!audioPath) return;
-      mergeAudios.push({ type: 'file', path: audioPath });
-      updateMergeAudioFileList();
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
-  }
-
-  // Show audio list from S3 for merge
-  await showAudioListForMerge();
+  // Local mode - directly open file dialog
+  const audioPath = await window.electronAPI.selectAudio();
+  if (!audioPath) return;
+  mergeAudios.push({ type: 'file', path: audioPath });
+  updateMergeAudioFileList();
 }
 
 function addSilenceToMerge() {
@@ -5234,29 +5185,13 @@ function toggleAudioSourceUI() {
 }
 
 async function selectAudioFile() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      selectedAudioFile = await window.electronAPI.selectAudio();
-      if (selectedAudioFile) {
-        document.getElementById('selected-audio').textContent = selectedAudioFile.split('\\').pop();
-        // Get audio duration
-        getAudioDuration(selectedAudioFile);
-      }
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
+  // Local mode - directly open file dialog
+  selectedAudioFile = await window.electronAPI.selectAudio();
+  if (selectedAudioFile) {
+    document.getElementById('selected-audio').textContent = selectedAudioFile.split('\\').pop();
+    // Get audio duration
+    getAudioDuration(selectedAudioFile);
   }
-
-  // Show audio list from S3 for insertion
-  await showAudioListForInsertion();
 }
 
 // Get audio file duration
@@ -6129,49 +6064,17 @@ function setupFFmpegProgressListener() {
 
 // Video/Audio file import functions
 async function importVideoFile() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      const videoPath = await window.electronAPI.selectVideo();
-      if (!videoPath) return;
-      await loadVideoWithAudioCheck(videoPath);
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
-  }
-
-  // Show video list from S3
-  await showVideoListFromS3();
+  // Local mode - directly open file dialog
+  const videoPath = await window.electronAPI.selectVideo();
+  if (!videoPath) return;
+  await loadVideoWithAudioCheck(videoPath);
 }
 
 async function importAudioFile() {
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-
-  // Check authentication
-  if (!token || !user) {
-    const useLocal = confirm('로그인이 필요합니다.\n\n로컬 파일을 선택하시겠습니까?\n(취소를 누르면 로그인 화면으로 이동합니다)');
-    if (useLocal) {
-      const audioPath = await window.electronAPI.selectAudio();
-      if (!audioPath) return;
-      await loadAudioFile(audioPath);
-    } else {
-      // Show login modal
-      showLoginModal();
-    }
-    return;
-  }
-
-  // Show audio list from S3
-  await showAudioListFromS3();
+  // Local mode - directly open file dialog
+  const audioPath = await window.electronAPI.selectAudio();
+  if (!audioPath) return;
+  await loadAudioFile(audioPath);
 }
 
 // Show audio list modal from S3
