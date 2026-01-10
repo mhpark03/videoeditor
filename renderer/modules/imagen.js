@@ -81,65 +81,58 @@ export async function generateImagenImage(params) {
 }
 
 /**
- * Upload generated Imagen image to S3
+ * Save generated Imagen image to local file
  * @param {string} imageBase64 - Base64 encoded image data
  * @param {string} title - Image title
  * @param {string} description - Image description
  * @param {string} prompt - Original prompt used for generation
- * @returns {Promise<Object>} Upload result with S3 URL
+ * @returns {Promise<Object>} Save result with file path
  */
 export async function uploadImagenImageToS3(imageBase64, title, description, prompt) {
-  console.log('[Imagen] Uploading image to S3');
+  console.log('[Imagen] Saving image to local file');
 
   try {
-    const authToken = getAuthToken();
-    const backendUrl = getBackendUrl();
-
-    if (!authToken) {
-      throw new Error('인증 토큰이 없습니다. 다시 로그인해주세요.');
-    }
-
     if (window.updateStatus) {
-      window.updateStatus('S3에 이미지 업로드 중...');
+      window.updateStatus('파일 저장 중...');
     }
 
-    // Upload to S3 via backend API
-    const response = await fetch(`${backendUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: JSON.stringify({
-        type: 'IMAGE',
-        imageData: imageBase64,
-        title: title || '생성된 이미지',
-        description: description || '',
-        prompt: prompt,
-        source: 'IMAGEN',
-        imagePurpose: 'REFERENCE'
-      })
+    // Use Electron save dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'Imagen 이미지 저장',
+      defaultPath: `imagen_${Date.now()}.png`,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }]
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `S3 업로드 실패 (${response.status})`);
+    if (!result || result.canceled) {
+      console.log('[Imagen] Save cancelled by user');
+      return { success: false, cancelled: true };
     }
 
-    const result = await response.json();
-    console.log('[Imagen] S3 upload successful:', result);
+    const savePath = result.filePath;
+
+    // Save base64 to file
+    const saveResult = await window.electronAPI.saveBase64ToFile({
+      base64Data: imageBase64,
+      filePath: savePath
+    });
+
+    if (!saveResult.success) {
+      throw new Error(saveResult.error || '파일 저장 실패');
+    }
+
+    console.log('[Imagen] Saved to local file:', savePath);
 
     if (window.updateStatus) {
-      window.updateStatus('S3 업로드 완료!');
+      window.updateStatus('저장 완료!');
     }
 
-    return result;
+    return { success: true, filePath: savePath };
 
   } catch (error) {
-    console.error('[Imagen] S3 upload error:', error);
+    console.error('[Imagen] Save error:', error);
 
     if (window.updateStatus) {
-      window.updateStatus('S3 업로드 실패');
+      window.updateStatus('저장 실패');
     }
 
     throw error;

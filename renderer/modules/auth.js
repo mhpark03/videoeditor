@@ -1,128 +1,67 @@
 /**
- * Authentication Module
- * Handles user login, logout, and authentication state management
+ * Authentication Module (Local Mode)
+ * Simplified version for standalone local operation without backend/S3
  */
 
-// Global authentication state
-let authToken = null;
-let refreshToken = null;
-let currentUser = null;
-let backendBaseUrl = 'http://localhost:8080';
-let selectedServerType = 'local'; // 'local', 'dev', 'custom'
-
-// Server configurations
-const SERVER_URLS = {
-  local: 'http://localhost:8080',
-  dev: 'http://kiosk-backend-env.eba-32jx2nbm.ap-northeast-2.elasticbeanstalk.com'
-};
+// Local mode - always authenticated
+let currentUser = { name: 'Local User', role: 'ADMIN' };
 
 /**
- * Initialize authentication UI
+ * Initialize authentication UI (Local Mode - No login required)
  */
 export function initializeAuth() {
-  console.log('[Auth] Initializing authentication UI');
+  console.log('[Auth] Local mode - No authentication required');
 
+  // Hide login modal if exists
+  const modal = document.getElementById('login-modal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+
+  // Hide logout button
   const logoutBtn = document.getElementById('logout-btn');
-
-  // Logout button click
   if (logoutBtn) {
-    logoutBtn.addEventListener('click', () => {
-      logout();
-    });
+    logoutBtn.style.display = 'none';
   }
 
-  // Check for saved auth token
-  const savedToken = localStorage.getItem('authToken');
-  const savedRefreshToken = localStorage.getItem('refreshToken');
-  const savedUser = localStorage.getItem('currentUser');
-  const savedBackendUrl = localStorage.getItem('backendUrl');
-  const savedServerType = localStorage.getItem('serverType');
-
-  if (savedToken && savedUser) {
-    const user = JSON.parse(savedUser);
-
-    // Check if saved user is ADMIN
-    if (user.role !== 'ADMIN') {
-      console.warn('[Auth] Non-admin user found in localStorage, logging out');
-      // Clear non-admin user data
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('backendUrl');
-      localStorage.removeItem('serverType');
-      showLoginModal();
-      return;
-    }
-
-    authToken = savedToken;
-    refreshToken = savedRefreshToken;
-    currentUser = user;
-    backendBaseUrl = savedBackendUrl || 'http://localhost:8080';
-    selectedServerType = savedServerType || 'local';
-    updateAuthUI();
-    console.log('[Auth] Restored admin session from localStorage');
-  } else {
-    // Show login modal on startup if not logged in
-    showLoginModal();
+  // Hide user info
+  const userInfo = document.getElementById('user-info');
+  if (userInfo) {
+    userInfo.style.display = 'none';
   }
+
+  // Show main content
+  const mainContent = document.getElementById('main-content');
+  if (mainContent) {
+    mainContent.style.display = 'flex';
+  }
+
+  // Show mode switch
+  const modeSwitchContainer = document.getElementById('mode-switch-container');
+  if (modeSwitchContainer) {
+    modeSwitchContainer.style.display = 'flex';
+  }
+
+  // Setup mode buttons
+  if (typeof window.setupModeButtons === 'function') {
+    window.setupModeButtons();
+  }
+
+  console.log('[Auth] Local mode initialized - ready to use');
 }
 
 /**
- * Select server type
- * @param {string} serverType - 'local', 'dev', or 'custom'
+ * Select server type (disabled in local mode)
  */
 export function selectServer(serverType) {
-  console.log('[Auth] Server selected:', serverType);
-  selectedServerType = serverType;
-
-  const backendUrlInput = document.getElementById('backend-url');
-  const localBtn = document.getElementById('server-local-btn');
-  const devBtn = document.getElementById('server-dev-btn');
-  const customBtn = document.getElementById('server-custom-btn');
-
-  // Update button styles
-  [localBtn, devBtn, customBtn].forEach(btn => {
-    if (btn) btn.style.background = '#444';
-  });
-
-  if (serverType === 'local') {
-    if (localBtn) localBtn.style.background = '#667eea';
-    if (backendUrlInput) {
-      backendUrlInput.value = SERVER_URLS.local;
-      backendUrlInput.readOnly = true;
-    }
-  } else if (serverType === 'dev') {
-    if (devBtn) devBtn.style.background = '#667eea';
-    if (backendUrlInput) {
-      backendUrlInput.value = SERVER_URLS.dev;
-      backendUrlInput.readOnly = true;
-    }
-  } else if (serverType === 'custom') {
-    if (customBtn) customBtn.style.background = '#667eea';
-    if (backendUrlInput) {
-      backendUrlInput.readOnly = false;
-      backendUrlInput.focus();
-    }
-  }
+  console.log('[Auth] Local mode - server selection disabled');
 }
 
 /**
- * Show login modal
+ * Show login modal (disabled in local mode)
  */
 export function showLoginModal() {
-  const modal = document.getElementById('login-modal');
-  const errorDiv = document.getElementById('login-error');
-
-  if (modal) {
-    modal.style.display = 'flex';
-    if (errorDiv) {
-      errorDiv.style.display = 'none';
-    }
-
-    // Initialize server selection
-    const savedServerType = localStorage.getItem('serverType') || 'local';
-    selectServer(savedServerType);
-  }
+  console.log('[Auth] Local mode - login modal disabled');
 }
 
 /**
@@ -136,290 +75,75 @@ export function hideLoginModal() {
 }
 
 /**
- * Handle login form submission
+ * Handle login (disabled in local mode)
  */
 export async function handleLogin() {
-  const email = document.getElementById('login-email')?.value;
-  const password = document.getElementById('login-password')?.value;
-  const backendUrl = document.getElementById('backend-url')?.value;
-  const errorDiv = document.getElementById('login-error');
-  const submitBtn = document.getElementById('login-submit-btn');
-
-  // Validate inputs
-  if (!email || !password) {
-    showLoginError('이메일과 비밀번호를 입력해주세요.');
-    return;
-  }
-
-  if (!backendUrl) {
-    showLoginError('백엔드 서버 URL을 입력해주세요.');
-    return;
-  }
-
-  try {
-    // Disable submit button
-    if (submitBtn) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = '로그인 중...';
-    }
-
-    console.log('[Auth] Attempting login:', { email, backendUrl });
-
-    // Call backend login API
-    const result = await window.electronAPI.backendLogin({
-      email,
-      password,
-      backendUrl
-    });
-
-    console.log('[Auth] Login successful');
-
-    // Check if user is ADMIN
-    if (!result.user || result.user.role !== 'ADMIN') {
-      console.error('[Auth] Non-admin user attempted login:', result.user);
-      showLoginError('관리자 계정만 비디오 에디터에 로그인할 수 있습니다.');
-      return;
-    }
-
-    console.log('[Auth] Admin user verified');
-
-    // Save auth state
-    authToken = result.token;
-    refreshToken = result.refreshToken;
-    currentUser = result.user;
-    backendBaseUrl = backendUrl;
-
-    // Save to localStorage
-    localStorage.setItem('authToken', authToken);
-    localStorage.setItem('refreshToken', refreshToken);
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-    localStorage.setItem('backendUrl', backendBaseUrl);
-    localStorage.setItem('serverType', selectedServerType);
-
-    // Update UI
-    updateAuthUI();
-    hideLoginModal();
-
-    // Clear form
-    document.getElementById('login-email').value = '';
-    document.getElementById('login-password').value = '';
-
-    // Update status (requires external function)
-    if (typeof window.updateStatus === 'function') {
-      window.updateStatus(`로그인 성공: ${currentUser.email}`);
-    }
-
-  } catch (error) {
-    console.error('[Auth] Login failed:', error);
-    showLoginError(error.message);
-  } finally {
-    // Re-enable submit button
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = '로그인';
-    }
-  }
+  console.log('[Auth] Local mode - login disabled');
 }
 
 /**
- * Show login error message
- * @param {string} message - Error message to display
- */
-function showLoginError(message) {
-  const errorDiv = document.getElementById('login-error');
-  if (errorDiv) {
-    errorDiv.textContent = message;
-    errorDiv.style.display = 'block';
-  }
-}
-
-/**
- * Logout
+ * Logout (disabled in local mode)
  */
 export function logout() {
-  console.log('[Auth] Logging out');
-
-  // Clear auth state
-  authToken = null;
-  refreshToken = null;
-  currentUser = null;
-
-  // Clear localStorage
-  localStorage.removeItem('authToken');
-  localStorage.removeItem('refreshToken');
-  localStorage.removeItem('currentUser');
-
-  // Update UI
-  updateAuthUI();
-
-  // Update status (requires external function)
-  if (typeof window.updateStatus === 'function') {
-    window.updateStatus('로그아웃되었습니다.');
-  }
-
-  // Show login modal
-  showLoginModal();
+  console.log('[Auth] Local mode - logout disabled');
 }
 
 /**
  * Update authentication UI
  */
 export function updateAuthUI() {
-  const modeSwitchContainer = document.getElementById('mode-switch-container');
-  const userInfo = document.getElementById('user-info');
-  const userEmail = document.getElementById('user-email');
-  const logoutBtn = document.getElementById('logout-btn');
+  // Always show main content in local mode
   const mainContent = document.getElementById('main-content');
-
-  if (authToken && currentUser) {
-    // Logged in state
-    if (modeSwitchContainer) modeSwitchContainer.style.display = 'flex';
-    if (userInfo) userInfo.style.display = 'block';
-    if (userEmail) userEmail.textContent = currentUser.name || currentUser.email;
-    if (logoutBtn) logoutBtn.style.display = 'block';
-    if (mainContent) mainContent.style.display = 'flex';
-
-    // Re-setup mode buttons after showing them
-    if (typeof window.setupModeButtons === 'function') {
-      window.setupModeButtons();
-      console.log('[Auth] Mode buttons re-setup after login');
-    }
-  } else {
-    // Logged out state
-    if (modeSwitchContainer) modeSwitchContainer.style.display = 'none';
-    if (userInfo) userInfo.style.display = 'none';
-    if (logoutBtn) logoutBtn.style.display = 'none';
-    if (mainContent) mainContent.style.display = 'none';
+  if (mainContent) {
+    mainContent.style.display = 'flex';
   }
 }
 
 /**
- * Get current auth token
- * @returns {string|null} - Current authentication token
+ * Get current auth token (returns dummy token for local mode)
  */
 export function getAuthToken() {
-  return authToken;
+  return 'local-mode-token';
 }
 
 /**
  * Get current refresh token
- * @returns {string|null} - Current refresh token
  */
 export function getRefreshToken() {
-  return refreshToken;
+  return null;
 }
 
 /**
  * Get current user
- * @returns {object|null} - Current user object
  */
 export function getCurrentUser() {
   return currentUser;
 }
 
 /**
- * Get backend base URL
- * @returns {string} - Backend base URL
+ * Get backend base URL (not used in local mode)
  */
 export function getBackendUrl() {
-  return backendBaseUrl;
+  return 'http://localhost:8080';
 }
 
 /**
- * Check if user is authenticated
- * @returns {boolean} - True if authenticated
+ * Check if user is authenticated (always true in local mode)
  */
 export function isAuthenticated() {
-  return authToken !== null && currentUser !== null;
+  return true;
 }
 
 /**
- * Refresh access token using refresh token
- * @returns {Promise<string>} - New access token
+ * Refresh access token (not needed in local mode)
  */
 export async function refreshAccessToken() {
-  console.log('[Auth] Attempting to refresh access token');
-
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
-  }
-
-  try {
-    const response = await fetch(`${backendBaseUrl}/api/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ refreshToken })
-    });
-
-    if (!response.ok) {
-      throw new Error('Token refresh failed');
-    }
-
-    const data = await response.json();
-
-    // Update tokens
-    authToken = data.token;
-    refreshToken = data.refreshToken;
-
-    // Save to localStorage
-    localStorage.setItem('authToken', authToken);
-    localStorage.setItem('refreshToken', refreshToken);
-
-    console.log('[Auth] Access token refreshed successfully');
-    return authToken;
-
-  } catch (error) {
-    console.error('[Auth] Token refresh failed:', error);
-    // Clear auth state and show login modal
-    logout();
-    throw error;
-  }
+  return 'local-mode-token';
 }
 
 /**
- * Fetch with automatic token refresh on 401 error
- * @param {string} url - URL to fetch
- * @param {object} options - Fetch options
- * @returns {Promise<Response>} - Fetch response
+ * Fetch with auth (passthrough in local mode)
  */
 export async function fetchWithAuth(url, options = {}) {
-  // Add Authorization header if not present
-  if (!options.headers) {
-    options.headers = {};
-  }
-
-  if (authToken && !options.headers['Authorization']) {
-    options.headers['Authorization'] = `Bearer ${authToken}`;
-  }
-
-  try {
-    let response = await fetch(url, options);
-
-    // If 401 (Unauthorized), try to refresh token and retry
-    if (response.status === 401 && refreshToken) {
-      console.log('[Auth] 401 error, attempting token refresh');
-
-      try {
-        // Refresh the access token
-        const newToken = await refreshAccessToken();
-
-        // Retry original request with new token
-        options.headers['Authorization'] = `Bearer ${newToken}`;
-        response = await fetch(url, options);
-
-        console.log('[Auth] Request retried successfully with new token');
-      } catch (refreshError) {
-        console.error('[Auth] Token refresh failed, logging out');
-        // refreshAccessToken already calls logout() on failure
-        throw refreshError;
-      }
-    }
-
-    return response;
-  } catch (error) {
-    console.error('[Auth] Fetch error:', error);
-    throw error;
-  }
+  return fetch(url, options);
 }

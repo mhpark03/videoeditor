@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File download
   downloadFile: (url, filename) => ipcRenderer.invoke('download-file', url, filename),
 
+  // Local file save operations
+  saveFileDialog: (options) => ipcRenderer.invoke('save-file-dialog', options),
+  saveBase64ToFile: (options) => ipcRenderer.invoke('save-base64-to-file', options),
+  saveBufferToFile: (options) => ipcRenderer.invoke('save-buffer-to-file', options),
+  copyFile: (options) => ipcRenderer.invoke('copy-file', options),
+
   // Focus webContents (workaround for input activation)
   focusWebContents: () => ipcRenderer.invoke('focus-webcontents'),
   // Imagen operations (using Gemini API with API Key)

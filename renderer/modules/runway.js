@@ -163,38 +163,13 @@ function showGeneratedImagePreview(imageBlob, imageUrl, fileName, title, descrip
 }
 
 /**
- * Save generated image to S3
+ * Save generated image to local file
  */
 export async function saveGeneratedImageToS3() {
   const data = window.generatedImageData;
 
   if (!data) {
     alert('저장할 이미지 데이터가 없습니다.');
-    return;
-  }
-
-  // Get current values from input fields
-  const title = document.getElementById('ai-image-title-runway')?.value?.trim();
-  const description = document.getElementById('ai-image-description-runway')?.value?.trim();
-
-  // Validate title and description
-  if (!title || title === '') {
-    alert('제목을 입력해주세요.');
-    return;
-  }
-
-  if (!description || description === '') {
-    alert('설명을 입력해주세요.');
-    return;
-  }
-
-  // Check authentication
-  const authToken = window.getAuthToken ? window.getAuthToken() : null;
-  const currentUser = window.getCurrentUser ? window.getCurrentUser() : null;
-  const backendBaseUrl = window.getBackendUrl ? window.getBackendUrl() : 'http://localhost:8080';
-
-  if (!authToken || !currentUser) {
-    alert('S3에 업로드하려면 로그인이 필요합니다.');
     return;
   }
 
@@ -207,40 +182,49 @@ export async function saveGeneratedImageToS3() {
   try {
     if (typeof window.showProgress === 'function') window.showProgress();
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(0, 'S3에 업로드 중...');
+      window.updateProgress(0, '파일 저장 중...');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3에 업로드 중...');
+      window.updateStatus('파일 저장 중...');
     }
 
-    const formData = new FormData();
-    formData.append('file', data.blob, data.fileName);
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('mediaType', 'IMAGE');  // Explicitly set media type
-    formData.append('imagePurpose', 'REFERENCE');  // For video generation reference
-
-    const uploadResponse = await fetch(`${backendBaseUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: formData
+    // Use Electron save dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'Runway 이미지 저장',
+      defaultPath: data.fileName || `runway_image_${Date.now()}.png`,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }]
     });
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`S3 업로드 실패: ${uploadResponse.status} ${errorText}`);
+    if (!result || result.canceled) {
+      console.log('[Runway Image] Save cancelled by user');
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '💾 PC에 저장';
+      }
+      if (typeof window.hideProgress === 'function') window.hideProgress();
+      return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log('[Runway Image] Upload successful:', uploadResult);
+    const savePath = result.filePath;
+
+    // Convert blob to array buffer and save
+    const arrayBuffer = await data.blob.arrayBuffer();
+    const saveResult = await window.electronAPI.saveBufferToFile({
+      buffer: Array.from(new Uint8Array(arrayBuffer)),
+      filePath: savePath
+    });
+
+    if (!saveResult.success) {
+      throw new Error(saveResult.error || '파일 저장 실패');
+    }
+
+    console.log('[Runway Image] Saved to local file:', savePath);
 
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(100, 'S3 저장 완료!');
+      window.updateProgress(100, '저장 완료!');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 완료!');
+      window.updateStatus('저장 완료!');
     }
     if (typeof window.hideProgress === 'function') window.hideProgress();
 
@@ -264,19 +248,19 @@ export async function saveGeneratedImageToS3() {
     URL.revokeObjectURL(data.previewUrl);
     window.generatedImageData = null;
 
-    alert(`Runway AI 이미지가 S3에 성공적으로 저장되었습니다!\n\n제목: ${data.title}\n설명: ${data.description}`);
+    alert(`Runway AI 이미지가 저장되었습니다!\n\n경로: ${savePath}`);
 
   } catch (error) {
-    console.error('[Runway Image] Upload failed:', error);
+    console.error('[Runway Image] Save failed:', error);
     if (typeof window.hideProgress === 'function') window.hideProgress();
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 실패');
+      window.updateStatus('저장 실패');
     }
-    alert(`S3 저장 중 오류가 발생했습니다:\n\n${error.message}`);
+    alert(`파일 저장 중 오류가 발생했습니다:\n\n${error.message}`);
 
     if (saveBtn) {
       saveBtn.disabled = false;
-      saveBtn.textContent = '💾 S3에 저장';
+      saveBtn.textContent = '💾 PC에 저장';
     }
   }
 }
@@ -466,7 +450,7 @@ async function openRunwayVideoS3ImageSelector(imageNumber) {
     console.log(`[Runway Video] Loaded ${images.length} images from S3`);
 
     if (images.length === 0) {
-      alert('S3에 저장된 이미지가 없습니다.');
+      alert('PC에 저장된 이미지가 없습니다.');
       return;
     }
 
@@ -965,7 +949,7 @@ export function displayRunwayVideoPreview() {
 }
 
 /**
- * Save generated Runway video to S3
+ * Save generated Runway video to local file
  */
 export async function saveRunwayVideoToS3() {
   if (!generatedRunwayVideo) {
@@ -973,37 +957,14 @@ export async function saveRunwayVideoToS3() {
     return;
   }
 
-  const title = document.getElementById('ai-video-title-runway')?.value?.trim();
-  const description = document.getElementById('ai-video-description-runway')?.value?.trim();
-
-  // Validation
-  if (!title) {
-    alert('제목을 입력해주세요.');
-    return;
-  }
-
-  if (!description) {
-    alert('설명을 입력해주세요.');
-    return;
-  }
-
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : null;
-  const baseUrl = window.getBackendUrl ? window.getBackendUrl() : 'http://localhost:8080';
-
-  if (!token) {
-    alert('로그인이 필요합니다.');
-    return;
-  }
-
-  console.log('[Runway Video] Saving to S3:', { title, description });
+  console.log('[Runway Video] Saving to local file');
 
   try {
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(10, 'S3 저장 준비 중...');
+      window.updateProgress(10, '파일 저장 준비 중...');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 중...');
+      window.updateStatus('파일 저장 중...');
     }
 
     // Use local downloaded file
@@ -1011,66 +972,46 @@ export async function saveRunwayVideoToS3() {
       throw new Error('로컬 파일 경로가 없습니다. 영상을 다시 생성해주세요.');
     }
 
-    if (typeof window.updateProgress === 'function') {
-      window.updateProgress(20, '로컬 파일 읽는 중...');
-    }
-
-    // Read local file and convert to blob
-    const videoResponse = await fetch(`file://${generatedRunwayVideo.filePath.replace(/\\/g, '/')}`);
-    if (!videoResponse.ok) {
-      throw new Error('Failed to read local video file');
-    }
-
-    const videoBlob = await videoResponse.blob();
-    console.log('[Runway Video] Local file read, size:', videoBlob.size);
-
-    // Upload to S3 via backend
-    if (typeof window.updateProgress === 'function') {
-      window.updateProgress(50, 'S3 업로드 중...');
-    }
-
-    const formData = new FormData();
-    formData.append('file', videoBlob, `runway_video_${Date.now()}.mp4`);
-    formData.append('title', title);
-    formData.append('description', description || '');
-    formData.append('mediaType', 'VIDEO');  // Explicitly set media type
-
-    const uploadResponse = await fetch(`${baseUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
+    // Use Electron save dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'Runway 영상 저장',
+      defaultPath: `runway_video_${Date.now()}.mp4`,
+      filters: [{ name: 'Videos', extensions: ['mp4', 'webm', 'avi'] }]
     });
 
-    if (!uploadResponse.ok) {
-      throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+    if (!result || result.canceled) {
+      console.log('[Runway Video] Save cancelled by user');
+      if (typeof window.updateProgress === 'function') {
+        window.updateProgress(0, '');
+      }
+      return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log('[Runway Video] Upload result:', uploadResult);
+    const savePath = result.filePath;
+
+    // Copy file to destination
+    const copyResult = await window.electronAPI.copyFile({
+      sourcePath: generatedRunwayVideo.filePath,
+      destPath: savePath
+    });
+
+    if (!copyResult.success) {
+      throw new Error(copyResult.error || '파일 복사 실패');
+    }
 
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(100, 'S3 저장 완료!');
+      window.updateProgress(100, '저장 완료!');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 완료!');
+      window.updateStatus('저장 완료!');
     }
 
-    alert('영상이 S3에 저장되었습니다!\n\n' +
-          `제목: ${title}\n` +
-          `설명: ${description}\n\n` +
-          '백엔드 API와 연동하여 S3에 자동 업로드되었습니다.');
-
-    console.log('[Runway Video] Saved to S3 successfully');
-
-    // Clear form
-    document.getElementById('ai-video-title-runway').value = '';
-    document.getElementById('ai-video-description-runway').value = '';
+    alert(`영상이 저장되었습니다!\n\n경로: ${savePath}`);
+    console.log('[Runway Video] Saved to local file:', savePath);
 
   } catch (error) {
-    console.error('[Runway Video] S3 upload failed:', error);
-    alert('S3 저장 중 오류가 발생했습니다: ' + error.message);
+    console.error('[Runway Video] Save failed:', error);
+    alert('파일 저장 중 오류가 발생했습니다: ' + error.message);
     if (typeof window.updateProgress === 'function') {
       window.updateProgress(0, '');
     }
@@ -1161,7 +1102,7 @@ export async function selectReferenceImageFromS3(slotIndex) {
     const images = await fetchMediaFromS3('image');
 
     if (!images || images.length === 0) {
-      alert('S3에 저장된 이미지가 없습니다.');
+      alert('PC에 저장된 이미지가 없습니다.');
       return;
     }
 

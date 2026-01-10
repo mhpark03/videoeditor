@@ -206,7 +206,7 @@ async function openVeoRefImageS3Selector(index) {
     console.log(`[VEO Image] Loaded ${images.length} images from S3`);
 
     if (images.length === 0) {
-      alert('S3에 저장된 이미지가 없습니다.');
+      alert('PC에 저장된 이미지가 없습니다.');
       return;
     }
 
@@ -557,7 +557,7 @@ export function useGeneratedImageForVideo() {
 }
 
 /**
- * Save generated VEO image to S3
+ * Save generated VEO image to local file
  */
 export async function saveGeneratedVeoImageToS3() {
   if (!generatedVeoImage) {
@@ -565,90 +565,55 @@ export async function saveGeneratedVeoImageToS3() {
     return;
   }
 
-  const title = document.getElementById('ai-image-title-veo')?.value?.trim();
-  const description = document.getElementById('ai-image-description-veo')?.value?.trim();
-
-  if (!title) {
-    alert('제목을 입력해주세요.');
-    return;
-  }
-
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : null;
-  const baseUrl = window.getBackendUrl ? window.getBackendUrl() : 'http://localhost:8080';
-
-  if (!token) {
-    alert('로그인이 필요합니다.');
-    return;
-  }
-
   try {
-    console.log('[VEO Image] Saving to S3...');
+    console.log('[VEO Image] Saving to local file...');
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(10, 'S3 저장 준비 중...');
+      window.updateProgress(10, '파일 저장 준비 중...');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 중...');
+      window.updateStatus('파일 저장 중...');
     }
 
-    // Convert base64 to blob
-    const byteCharacters = atob(generatedVeoImage.imageData);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const imageBlob = new Blob([byteArray], { type: 'image/png' });
-
-    console.log('[VEO Image] Image blob created, size:', imageBlob.size);
-
-    // Upload to S3 via backend
-    if (typeof window.updateProgress === 'function') {
-      window.updateProgress(50, 'S3 업로드 중...');
-    }
-
-    const formData = new FormData();
-    formData.append('file', imageBlob, `veo_image_${Date.now()}.png`);
-    formData.append('title', title);
-    formData.append('description', description || '');
-    formData.append('mediaType', 'IMAGE');  // Explicitly set media type
-
-    const uploadResponse = await fetch(`${baseUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
+    // Use Electron save dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'VEO 이미지 저장',
+      defaultPath: `veo_image_${Date.now()}.png`,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }]
     });
 
-    if (!uploadResponse.ok) {
-      throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+    if (!result || result.canceled) {
+      console.log('[VEO Image] Save cancelled by user');
+      if (typeof window.updateProgress === 'function') {
+        window.updateProgress(0, '');
+      }
+      return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log('[VEO Image] Upload result:', uploadResult);
+    const savePath = result.filePath;
+
+    // Convert base64 to buffer and save
+    const saveResult = await window.electronAPI.saveBase64ToFile({
+      base64Data: generatedVeoImage.imageData,
+      filePath: savePath
+    });
+
+    if (!saveResult.success) {
+      throw new Error(saveResult.error || '파일 저장 실패');
+    }
 
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(100, 'S3 저장 완료!');
+      window.updateProgress(100, '저장 완료!');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 완료!');
+      window.updateStatus('저장 완료!');
     }
 
-    alert('이미지가 S3에 저장되었습니다!\n\n' +
-          `제목: ${title}\n` +
-          `설명: ${description}\n\n` +
-          '백엔드 API와 연동하여 S3에 자동 업로드되었습니다.');
-
-    console.log('[VEO Image] Saved to S3 successfully');
-
-    // Clear form
-    document.getElementById('ai-image-title-veo').value = '';
-    document.getElementById('ai-image-description-veo').value = '';
+    alert(`이미지가 저장되었습니다!\n\n경로: ${savePath}`);
+    console.log('[VEO Image] Saved to local file:', savePath);
 
   } catch (error) {
-    console.error('[VEO Image] S3 upload failed:', error);
-    alert('S3 저장 중 오류가 발생했습니다: ' + error.message);
+    console.error('[VEO Image] Save failed:', error);
+    alert('파일 저장 중 오류가 발생했습니다: ' + error.message);
     if (typeof window.updateProgress === 'function') {
       window.updateProgress(0, '');
     }
@@ -811,7 +776,7 @@ async function openVeoVideoS3ImageSelector() {
     console.log(`[VEO Video] Loaded ${images.length} images from S3`);
 
     if (images.length === 0) {
-      alert('S3에 저장된 이미지가 없습니다.');
+      alert('PC에 저장된 이미지가 없습니다.');
       return;
     }
 
@@ -1123,7 +1088,7 @@ export async function executeGenerateVideoVeo() {
     }
 
     // Show success message
-    alert(`영상이 생성되었습니다!\n\nTask ID: ${result.taskId}\n\n영상을 재생하거나 S3에 저장할 수 있습니다.`);
+    alert(`영상이 생성되었습니다!\n\nTask ID: ${result.taskId}\n\n영상을 재생하거나 PC에 저장할 수 있습니다.`);
 
     // Show preview section
     const previewSection = document.getElementById('veo-video-preview-section');
@@ -1153,104 +1118,63 @@ export async function executeGenerateVideoVeo() {
 }
 
 /**
- * Save generated VEO video to S3
+ * Save generated VEO video to local file
  */
 export async function saveVeoVideoToS3() {
-  if (!generatedVeoVideo || !generatedVeoVideo.url) {
+  if (!generatedVeoVideo || !generatedVeoVideo.localPath) {
     alert('저장할 영상이 없습니다. 먼저 영상을 생성해주세요.');
     return;
   }
 
-  const title = document.getElementById('ai-video-title-veo')?.value?.trim();
-  const description = document.getElementById('ai-video-description-veo')?.value?.trim();
-
-  if (!title) {
-    alert('제목을 입력해주세요.');
-    return;
-  }
-
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : null;
-  const baseUrl = window.getBackendUrl ? window.getBackendUrl() : 'http://localhost:8080';
-
-  if (!token) {
-    alert('로그인이 필요합니다.');
-    return;
-  }
-
   try {
-    console.log('[VEO Video] Saving to S3...');
+    console.log('[VEO Video] Saving to local file...');
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(10, 'S3 저장 준비 중...');
+      window.updateProgress(10, '파일 저장 준비 중...');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 중...');
+      window.updateStatus('파일 저장 중...');
     }
 
-    // Use local downloaded file
-    if (!generatedVeoVideo.localPath) {
-      throw new Error('로컬 파일 경로가 없습니다. 영상을 다시 생성해주세요.');
-    }
-
-    if (typeof window.updateProgress === 'function') {
-      window.updateProgress(20, '로컬 파일 읽는 중...');
-    }
-
-    // Read local file and convert to blob
-    const videoResponse = await fetch(`file://${generatedVeoVideo.localPath}`);
-    if (!videoResponse.ok) {
-      throw new Error('Failed to read local video file');
-    }
-
-    const videoBlob = await videoResponse.blob();
-    console.log('[VEO Video] Local file read, size:', videoBlob.size);
-
-    // Upload to S3 via backend
-    if (typeof window.updateProgress === 'function') {
-      window.updateProgress(50, 'S3 업로드 중...');
-    }
-    const formData = new FormData();
-    formData.append('file', videoBlob, `veo_${Date.now()}.mp4`);
-    formData.append('title', title);
-    formData.append('description', description || '');
-    formData.append('mediaType', 'VIDEO');  // Explicitly set media type
-
-    const uploadResponse = await fetch(`${baseUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
+    // Use Electron save dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'VEO 영상 저장',
+      defaultPath: `veo_video_${Date.now()}.mp4`,
+      filters: [{ name: 'Videos', extensions: ['mp4', 'webm', 'avi'] }]
     });
 
-    if (!uploadResponse.ok) {
-      throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+    if (!result || result.canceled) {
+      console.log('[VEO Video] Save cancelled by user');
+      if (typeof window.updateProgress === 'function') {
+        window.updateProgress(0, '');
+      }
+      return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log('[VEO Video] Upload result:', uploadResult);
+    const savePath = result.filePath;
+
+    // Copy file to destination
+    const copyResult = await window.electronAPI.copyFile({
+      sourcePath: generatedVeoVideo.localPath,
+      destPath: savePath
+    });
+
+    if (!copyResult.success) {
+      throw new Error(copyResult.error || '파일 복사 실패');
+    }
 
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(100, 'S3 저장 완료!');
+      window.updateProgress(100, '저장 완료!');
     }
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('S3 저장 완료!');
+      window.updateStatus('저장 완료!');
     }
 
-    alert('영상이 S3에 저장되었습니다!\n\n' +
-          `제목: ${title}\n` +
-          `설명: ${description}\n\n` +
-          '백엔드 API와 연동하여 S3에 자동 업로드되었습니다.');
-
-    console.log('[VEO Video] Saved to S3 successfully');
-
-    // Clear form
-    document.getElementById('ai-video-title-veo').value = '';
-    document.getElementById('ai-video-description-veo').value = '';
+    alert(`영상이 저장되었습니다!\n\n경로: ${savePath}`);
+    console.log('[VEO Video] Saved to local file:', savePath);
 
   } catch (error) {
-    console.error('[VEO Video] S3 upload failed:', error);
-    alert('S3 저장 중 오류가 발생했습니다: ' + error.message);
+    console.error('[VEO Video] Save failed:', error);
+    alert('파일 저장 중 오류가 발생했습니다: ' + error.message);
     if (typeof window.updateProgress === 'function') {
       window.updateProgress(0, '');
     }

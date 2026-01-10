@@ -1,137 +1,80 @@
-// Backend API integration for Kiosk Management System
-const API_BASE_URL = 'http://localhost:8080/api';
+// Local File API for Video Editor (Standalone Mode)
+// This version works without backend/S3 connection
 
+/**
+ * Local Video API
+ * Handles local file operations without backend server
+ */
 class VideoAPI {
-  constructor(baseUrl = API_BASE_URL) {
-    this.baseUrl = baseUrl;
+  constructor() {
+    console.log('[VideoAPI] Initialized in local mode');
   }
 
-  // Get all videos from backend
+  // Get all videos from local storage (not implemented - use file browser)
   async getAllVideos() {
-    try {
-      const response = await fetch(`${this.baseUrl}/videos`);
-      if (!response.ok) throw new Error('Failed to fetch videos');
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching videos:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - use file browser to select videos');
+    return [];
   }
 
-  // Get video by ID
+  // Get video by ID (not applicable in local mode)
   async getVideoById(videoId) {
-    try {
-      const response = await fetch(`${this.baseUrl}/videos/${videoId}`);
-      if (!response.ok) throw new Error('Video not found');
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching video:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - video lookup not available');
+    return null;
   }
 
-  // Download video from backend
+  // Download video - not needed in local mode, files are already local
   async downloadVideo(videoId, savePath) {
-    try {
-      // Get presigned URL
-      const response = await fetch(`${this.baseUrl}/videos/${videoId}/download-url`);
-      if (!response.ok) throw new Error('Failed to get download URL');
-
-      const data = await response.json();
-      const downloadUrl = data.url || data.downloadUrl;
-
-      // Download file
-      const fileResponse = await fetch(downloadUrl);
-      if (!fileResponse.ok) throw new Error('Failed to download video');
-
-      const blob = await fileResponse.blob();
-      const buffer = await blob.arrayBuffer();
-
-      // Save file using Node.js fs
-      const fs = require('fs');
-      fs.writeFileSync(savePath, Buffer.from(buffer));
-
-      return savePath;
-    } catch (error) {
-      console.error('Error downloading video:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - download not needed for local files');
+    return savePath;
   }
 
-  // Upload edited video back to backend
+  // Upload/Save video to local file
   async uploadVideo(filePath, metadata) {
+    console.log('[VideoAPI] Local mode - saving video locally');
+
     try {
-      const fs = require('fs');
-      const path = require('path');
-
-      const formData = new FormData();
-      const fileBuffer = fs.readFileSync(filePath);
-      const blob = new Blob([fileBuffer]);
-      const fileName = path.basename(filePath);
-
-      formData.append('file', blob, fileName);
-      formData.append('title', metadata.title || fileName);
-      formData.append('description', metadata.description || 'Edited video');
-
-      const response = await fetch(`${this.baseUrl}/videos/upload`, {
-        method: 'POST',
-        body: formData
+      const result = await window.electronAPI.saveFileDialog({
+        title: '영상 저장',
+        defaultPath: metadata.title || 'video.mp4',
+        filters: [{ name: 'Videos', extensions: ['mp4', 'webm', 'avi'] }]
       });
 
-      if (!response.ok) throw new Error('Failed to upload video');
-      return await response.json();
+      if (result.canceled) {
+        return { success: false, cancelled: true };
+      }
+
+      // Copy file to new location
+      const copyResult = await window.electronAPI.copyFile({
+        sourcePath: filePath,
+        destPath: result.filePath
+      });
+
+      return {
+        success: copyResult.success,
+        filePath: result.filePath
+      };
     } catch (error) {
-      console.error('Error uploading video:', error);
+      console.error('[VideoAPI] Save failed:', error);
       throw error;
     }
   }
 
-  // Update video metadata
+  // Update video metadata (not applicable in local mode)
   async updateVideoMetadata(videoId, metadata) {
-    try {
-      const response = await fetch(`${this.baseUrl}/videos/${videoId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(metadata)
-      });
-
-      if (!response.ok) throw new Error('Failed to update video');
-      return await response.json();
-    } catch (error) {
-      console.error('Error updating video:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - metadata update not available');
+    return null;
   }
 
-  // Get videos by kiosk
+  // Get videos by kiosk (not applicable in local mode)
   async getVideosByKiosk(kioskId) {
-    try {
-      const response = await fetch(`${this.baseUrl}/kiosks/kioskid/${kioskId}`);
-      if (!response.ok) throw new Error('Kiosk not found');
-
-      const kiosk = await response.json();
-      return kiosk.videos || [];
-    } catch (error) {
-      console.error('Error fetching kiosk videos:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - kiosk videos not available');
+    return [];
   }
 
-  // Assign video to kiosk
+  // Assign video to kiosk (not applicable in local mode)
   async assignVideoToKiosk(kioskId, videoId) {
-    try {
-      const response = await fetch(`${this.baseUrl}/kiosks/${kioskId}/videos/${videoId}`, {
-        method: 'POST'
-      });
-
-      if (!response.ok) throw new Error('Failed to assign video');
-      return await response.json();
-    } catch (error) {
-      console.error('Error assigning video:', error);
-      throw error;
-    }
+    console.log('[VideoAPI] Local mode - kiosk assignment not available');
+    return null;
   }
 }
 

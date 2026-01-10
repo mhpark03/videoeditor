@@ -3327,6 +3327,123 @@ ipcMain.handle('download-file', async (event, url, filename) => {
 });
 
 // ============================================================================
+// Local File Save Operations
+// ============================================================================
+
+/**
+ * Show save file dialog
+ */
+ipcMain.handle('save-file-dialog', async (event, options) => {
+  const { title, defaultPath, filters } = options;
+
+  logInfo('SAVE_DIALOG', 'Opening save file dialog', { title, defaultPath });
+
+  try {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: title || '파일 저장',
+      defaultPath: defaultPath,
+      filters: filters || [
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (result.canceled) {
+      return { canceled: true };
+    }
+
+    return {
+      canceled: false,
+      filePath: result.filePath
+    };
+  } catch (error) {
+    logError('SAVE_DIALOG_ERROR', 'Failed to show save dialog', { error: error.message });
+    return { canceled: true, error: error.message };
+  }
+});
+
+/**
+ * Save base64 data to file
+ */
+ipcMain.handle('save-base64-to-file', async (event, options) => {
+  const { base64Data, filePath } = options;
+
+  logInfo('SAVE_BASE64', 'Saving base64 data to file', { filePath });
+
+  try {
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+
+    logInfo('SAVE_BASE64', 'File saved successfully', {
+      filePath,
+      size: buffer.length
+    });
+
+    return { success: true, filePath };
+  } catch (error) {
+    logError('SAVE_BASE64_ERROR', 'Failed to save base64 to file', {
+      filePath,
+      error: error.message
+    });
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Save buffer (array) to file
+ */
+ipcMain.handle('save-buffer-to-file', async (event, options) => {
+  const { buffer, filePath } = options;
+
+  logInfo('SAVE_BUFFER', 'Saving buffer to file', { filePath });
+
+  try {
+    const data = Buffer.from(buffer);
+    fs.writeFileSync(filePath, data);
+
+    logInfo('SAVE_BUFFER', 'File saved successfully', {
+      filePath,
+      size: data.length
+    });
+
+    return { success: true, filePath };
+  } catch (error) {
+    logError('SAVE_BUFFER_ERROR', 'Failed to save buffer to file', {
+      filePath,
+      error: error.message
+    });
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Copy file from source to destination
+ */
+ipcMain.handle('copy-file', async (event, options) => {
+  const { sourcePath, destPath } = options;
+
+  logInfo('COPY_FILE', 'Copying file', { sourcePath, destPath });
+
+  try {
+    fs.copyFileSync(sourcePath, destPath);
+
+    logInfo('COPY_FILE', 'File copied successfully', {
+      sourcePath,
+      destPath,
+      size: fs.statSync(destPath).size
+    });
+
+    return { success: true, destPath };
+  } catch (error) {
+    logError('COPY_FILE_ERROR', 'Failed to copy file', {
+      sourcePath,
+      destPath,
+      error: error.message
+    });
+    return { success: false, error: error.message };
+  }
+});
+
+// ============================================================================
 // Runway ML API Integration (Image Generation)
 // ============================================================================
 

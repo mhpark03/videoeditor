@@ -229,27 +229,20 @@ export async function executeGenerateTTS() {
 }
 
 /**
- * Generate TTS and upload to S3 via backend
- * Requires authentication and backend connection
+ * Generate TTS and save to local file
  */
 export async function executeGenerateTTSAndUpload() {
   // Get input values
   const text = document.getElementById('tts-text')?.value;
-  const title = document.getElementById('tts-title')?.value;
-  const description = document.getElementById('tts-description')?.value || '';
+  const title = document.getElementById('tts-title')?.value || 'tts_audio';
   const languageCode = 'ko-KR'; // Always Korean as per requirement
   const voiceName = document.getElementById('tts-voice')?.value;
   const speakingRate = parseFloat(document.getElementById('tts-speed')?.value || 1.0);
   const pitch = parseFloat(document.getElementById('tts-pitch')?.value || 0);
 
   // Validate inputs
-  if (!text || !title) {
-    alert('텍스트와 제목을 입력해주세요.');
-    return;
-  }
-
-  if (!description) {
-    alert('설명을 입력해주세요.');
+  if (!text) {
+    alert('텍스트를 입력해주세요.');
     return;
   }
 
@@ -258,23 +251,13 @@ export async function executeGenerateTTSAndUpload() {
     return;
   }
 
-  // Check authentication (requires auth module)
-  const authToken = window.getAuthToken ? window.getAuthToken() : null;
-  const currentUser = window.getCurrentUser ? window.getCurrentUser() : null;
-  const backendBaseUrl = window.getBackendUrl ? window.getBackendUrl() : 'http://localhost:8080';
-
-  if (!authToken || !currentUser) {
-    alert('로그인이 필요합니다.\n먼저 로그인해주세요.');
-    return;
-  }
-
   try {
     if (typeof window.showProgress === 'function') window.showProgress();
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('TTS 음성 업로드 준비 중...');
+      window.updateStatus('TTS 음성 생성 중...');
     }
 
-    console.log('[TTS Upload] Starting Google TTS generation and S3 upload...');
+    console.log('[TTS] Starting Google TTS generation and local save...');
 
     // Check if we can reuse preview file (same parameters)
     let audioPath, filename;
@@ -288,7 +271,7 @@ export async function executeGenerateTTSAndUpload() {
         lastPreviewState.pitch === pitch) {
 
       // Reuse preview file
-      console.log('[TTS Upload] Reusing preview file (parameters unchanged)');
+      console.log('[TTS] Reusing preview file (parameters unchanged)');
       audioPath = lastPreviewState.audioPath;
       filename = lastPreviewState.filename;
       reusingPreview = true;
@@ -301,7 +284,7 @@ export async function executeGenerateTTSAndUpload() {
       if (typeof window.updateProgress === 'function') {
         window.updateProgress(10, 'Google TTS API 호출 준비 중...');
       }
-      console.log('[TTS Upload] Generating new TTS audio (parameters changed or no preview)');
+      console.log('[TTS] Generating new TTS audio');
 
       const gender = determineGender(voiceName);
 
@@ -309,7 +292,7 @@ export async function executeGenerateTTSAndUpload() {
         window.updateProgress(30, 'Google TTS API 호출 중...');
       }
 
-      // Generate TTS audio to temporary file (no save path = temp file)
+      // Generate TTS audio to temporary file
       const directResult = await window.electronAPI.generateTtsDirect({
         text,
         title,
@@ -318,103 +301,83 @@ export async function executeGenerateTTSAndUpload() {
         gender,
         speakingRate,
         pitch,
-        savePath: null  // No save path = create temp file
+        savePath: null
       });
 
       if (!directResult.success) {
         throw new Error('Google TTS API call failed: ' + (directResult.error || 'Unknown error'));
       }
 
-      console.log('[TTS Upload] TTS generation successful:', directResult);
+      console.log('[TTS] TTS generation successful:', directResult);
       audioPath = directResult.audioPath;
       filename = directResult.filename;
-      if (typeof window.updateProgress === 'function') {
-        window.updateProgress(60, 'S3 업로드 준비 중...');
-      }
     }
 
-    // Read the generated file using fetch API (works with file:// protocol)
-    const fileUrl = `file:///${audioPath.replace(/\\/g, '/')}`;
-    const fileResponse = await fetch(fileUrl);
-    const audioBlob = await fileResponse.blob();
-
-    // Create FormData for multipart upload
-    const formData = new FormData();
-    formData.append('file', audioBlob, filename);
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('mediaType', 'AUDIO');  // Explicitly set media type
-
+    // Show save dialog
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(70, 'S3에 업로드 중...');
+      window.updateProgress(70, '저장 위치 선택...');
     }
 
-    // Upload to backend (AI-generated content endpoint)
-    const uploadResponse = await fetch(`${backendBaseUrl}/api/ai/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${authToken}`
-      },
-      body: formData
+    const result = await window.electronAPI.saveFileDialog({
+      title: 'TTS 음성 저장',
+      defaultPath: `${title}_${Date.now()}.mp3`,
+      filters: [{ name: 'Audio Files', extensions: ['mp3', 'wav'] }]
     });
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
+    if (!result || result.canceled) {
+      console.log('[TTS] Save cancelled by user');
+      if (typeof window.hideProgress === 'function') window.hideProgress();
+      return;
     }
 
-    const uploadResult = await uploadResponse.json();
-    console.log('[TTS Upload] Upload successful:', uploadResult);
+    // Copy file to selected location
+    const copyResult = await window.electronAPI.copyFile({
+      sourcePath: audioPath,
+      destPath: result.filePath
+    });
+
+    if (!copyResult.success) {
+      throw new Error(copyResult.error || '파일 저장 실패');
+    }
 
     if (typeof window.updateProgress === 'function') {
-      window.updateProgress(100, 'TTS 음성 생성 및 S3 저장 완료!');
+      window.updateProgress(100, 'TTS 음성 저장 완료!');
     }
 
     // Show success message
     const successMessage = reusingPreview
-      ? `TTS 음성이 성공적으로 S3에 저장되었습니다!\n(미리듣기 파일 재사용)\n\n`
-      : `TTS 음성이 성공적으로 생성되고 S3에 저장되었습니다!\n\n`;
+      ? `TTS 음성이 저장되었습니다!\n(미리듣기 파일 재사용)\n\n`
+      : `TTS 음성이 생성되고 저장되었습니다!\n\n`;
 
     alert(
       successMessage +
-      `제목: ${title}\n` +
+      `경로: ${result.filePath}\n` +
       `음성: ${voiceName}\n` +
-      `설명: ${description || '(없음)'}\n` +
       `속도: ${speakingRate}x\n` +
       `피치: ${pitch}`
     );
 
-    // Clear form
-    const textField = document.getElementById('tts-text');
-    const titleField = document.getElementById('tts-title');
-    const descField = document.getElementById('tts-description');
-
-    if (textField) textField.value = '';
-    if (titleField) titleField.value = '';
-    if (descField) descField.value = '';
-    updateTtsCharCount();
-
-    // Clear preview state after upload
+    // Clear preview state after save
     lastPreviewState = null;
 
     // Clean up temp file
     try {
       await window.electronAPI.deleteTempFile(audioPath);
-      console.log('[TTS Upload] Temp file cleaned up');
+      console.log('[TTS] Temp file cleaned up');
     } catch (cleanupError) {
-      console.warn('[TTS Upload] Failed to clean up temp file:', cleanupError);
+      console.warn('[TTS] Failed to clean up temp file:', cleanupError);
     }
 
     if (typeof window.updateStatus === 'function') {
-      window.updateStatus('TTS 음성 생성 및 S3 저장 완료');
+      window.updateStatus('TTS 음성 저장 완료');
     }
     if (typeof window.hideProgress === 'function') window.hideProgress();
   } catch (error) {
-    console.error('[TTS Upload] Failed:', error);
+    console.error('[TTS] Failed:', error);
     if (typeof window.handleError === 'function') {
-      window.handleError('TTS 음성 생성 및 S3 업로드', error, 'TTS 음성 생성 및 S3 업로드에 실패했습니다.');
+      window.handleError('TTS 음성 생성', error, 'TTS 음성 생성에 실패했습니다.');
     } else {
-      alert('TTS 음성 생성 및 S3 업로드에 실패했습니다.\n\n' + error.message);
+      alert('TTS 음성 생성에 실패했습니다.\n\n' + error.message);
     }
     if (typeof window.hideProgress === 'function') window.hideProgress();
   }

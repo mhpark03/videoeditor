@@ -867,7 +867,7 @@ function showToolProperties(tool) {
           <label>설명 *</label>
           <textarea id="extract-audio-description" rows="3" placeholder="설명을 입력하세요">${extractDescription.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
         </div>
-        <button class="property-btn" onclick="executeExtractAudioToS3()">S3에 저장</button>
+        <button class="property-btn" onclick="executeExtractAudioToS3()">PC에 저장</button>
       `;
       break;
 
@@ -1100,9 +1100,9 @@ function showToolProperties(tool) {
           <label>설명 *</label>
           <textarea id="export-video-description" rows="3" placeholder="설명을 입력하세요">${exportVideoDescription.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
         </div>
-        <button class="property-btn" onclick="executeExportVideoToS3()">S3에 저장</button>
+        <button class="property-btn" onclick="executeExportVideoToS3()">PC에 저장</button>
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
-          <small style="color: #aaa;">💡 편집된 영상 파일을 S3에 저장합니다</small>
+          <small style="color: #aaa;">💡 편집된 영상 파일을 PC에 저장합니다</small>
         </div>
       `;
       break;
@@ -1328,7 +1328,7 @@ function showToolProperties(tool) {
 
           <div id="runway-save-section" style="background: #2a3e2a; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #4ade80; display: none;">
             <button class="property-btn" onclick="saveGeneratedImageToS3()" style="width: 100%; margin: 0; background: #4ade80;">
-              💾 S3에 저장
+              💾 PC에 저장
             </button>
           </div>
         </div>
@@ -1403,7 +1403,7 @@ function showToolProperties(tool) {
             </div>
 
             <button class="property-btn" onclick="saveGeneratedVeoImageToS3()" style="width: 100%; margin: 0; background: #4ade80;">
-              💾 S3에 저장
+              💾 PC에 저장
             </button>
           </div>
         </div>
@@ -1504,7 +1504,7 @@ function showToolProperties(tool) {
           <div id="runway-video-preview-section" style="display: none;">
             <div class="property-group">
               <label>제목 *</label>
-              <input type="text" id="ai-video-title-runway" placeholder="S3에 저장할 영상의 제목">
+              <input type="text" id="ai-video-title-runway" placeholder="PC에 저장할 영상의 제목">
             </div>
 
             <div class="property-group">
@@ -1515,7 +1515,7 @@ function showToolProperties(tool) {
             <!-- Save to S3 Button -->
             <div style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #28a745;">
               <button class="property-btn" onclick="saveRunwayVideoToS3()" style="width: 100%; margin: 0; background: #28a745;">
-                💾 S3에 저장
+                💾 PC에 저장
               </button>
             </div>
           </div>
@@ -1600,7 +1600,7 @@ function showToolProperties(tool) {
           <div id="veo-video-preview-section" style="display: none;">
             <div class="property-group">
               <label>제목 *</label>
-              <input type="text" id="ai-video-title-veo" placeholder="S3에 저장할 영상의 제목">
+              <input type="text" id="ai-video-title-veo" placeholder="PC에 저장할 영상의 제목">
             </div>
 
             <div class="property-group">
@@ -1611,7 +1611,7 @@ function showToolProperties(tool) {
             <!-- Save to S3 Button -->
             <div style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #28a745;">
               <button class="property-btn" onclick="saveVeoVideoToS3()" style="width: 100%; margin: 0; background: #28a745;">
-                💾 S3에 저장
+                💾 PC에 저장
               </button>
             </div>
           </div>
@@ -1720,7 +1720,7 @@ function showToolProperties(tool) {
 
           <div style="background: #2a2a3e; padding: 12px; border-radius: 8px; margin-top: 10px; border-left: 4px solid #667eea;">
             <button class="property-btn" onclick="executeGenerateTTSAndUpload()" style="margin: 0; background: #667eea; width: 100%;">
-              🎵 음성 생성 및 S3 저장
+              🎵 음성 생성 및 파일 저장
             </button>
           </div>
         </div>
@@ -6208,7 +6208,7 @@ async function showAudioListFromS3() {
     hideProgress();
 
     if (audioFiles.length === 0) {
-      const useLocal = confirm('S3에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
+      const useLocal = confirm('PC에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
       if (useLocal) {
         const audioPath = await window.electronAPI.selectAudio();
         if (!audioPath) return;
@@ -6505,7 +6505,7 @@ async function showAudioListForMerge() {
     hideProgress();
 
     if (audioFiles.length === 0) {
-      const useLocal = confirm('S3에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
+      const useLocal = confirm('PC에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
       if (useLocal) {
         const audioPath = await window.electronAPI.selectAudio();
         if (!audioPath) return;
@@ -6797,7 +6797,7 @@ async function showVideoListFromS3() {
     hideProgress();
 
     if (videoFiles.length === 0) {
-      const useLocal = confirm('S3에 저장된 영상 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
+      const useLocal = confirm('PC에 저장된 영상 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
       if (useLocal) {
         const videoPath = await window.electronAPI.selectVideo();
         if (!videoPath) return;
@@ -7148,7 +7148,7 @@ async function showVideoListForMerge() {
     hideProgress();
 
     if (videoFiles.length === 0) {
-      const useLocal = confirm('S3에 저장된 영상 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
+      const useLocal = confirm('PC에 저장된 영상 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
       if (useLocal) {
         const videoPath = await window.electronAPI.selectVideo();
         if (!videoPath) return;
@@ -7440,7 +7440,7 @@ async function showAudioListForInsertion() {
     hideProgress();
 
     if (audioFiles.length === 0) {
-      const useLocal = confirm('S3에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
+      const useLocal = confirm('PC에 저장된 음성 파일이 없습니다.\n\n로컬 파일을 선택하시겠습니까?');
       if (useLocal) {
         selectedAudioFile = await window.electronAPI.selectAudio();
         if (selectedAudioFile) {
