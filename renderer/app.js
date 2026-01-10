@@ -2827,14 +2827,24 @@ function setupPlayheadInteraction() {
 
 // Setup audio track interaction for audio mode (zoom only, no playhead)
 function setupAudioTrackInteraction() {
+  console.log('[AudioTrack] Setting up audio track interaction...');
+
   const audioTrack = document.getElementById('audio-track');
   const zoomSelection = document.getElementById('zoom-selection');
   const playheadBar = document.getElementById('playhead-bar');
 
+  console.log('[AudioTrack] Elements found:', {
+    audioTrack: !!audioTrack,
+    zoomSelection: !!zoomSelection,
+    playheadBar: !!playheadBar
+  });
+
   if (!audioTrack || !zoomSelection) {
-    console.error('Audio track or zoom selection element not found');
+    console.error('[AudioTrack] Audio track or zoom selection element not found');
     return;
   }
+
+  console.log('[AudioTrack] Adding event listeners to audio track');
 
   let isDraggingZoom = false;
   let isDraggingPlayhead = false;
@@ -2876,10 +2886,13 @@ function setupAudioTrackInteraction() {
     }
   };
 
-  // Mouse down on audio track
+  // Mouse down on audio track (for zoom selection)
   audioTrack.addEventListener('mousedown', (e) => {
+    console.log('[AudioTrack] Mouse down on audio track:', e.target.id || e.target.className);
+
     // Check if clicking on playhead
     if (e.target === playheadBar || e.target.closest('.playhead-bar')) {
+      console.log('[AudioTrack] Clicked on playhead bar');
       isDraggingPlayhead = true;
       isUserSeekingSlider = true; // Prevent auto-skip during playhead drag
       e.preventDefault();
@@ -2887,6 +2900,7 @@ function setupAudioTrackInteraction() {
     }
 
     // Start zoom selection
+    console.log('[AudioTrack] Starting zoom selection drag');
     isDraggingZoom = true;
     const rect = audioTrack.getBoundingClientRect();
     zoomStartX = e.clientX - rect.left;
