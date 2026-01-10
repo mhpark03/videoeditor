@@ -8840,13 +8840,22 @@ async function executeExportVideoToS3() {
 
     updateProgress(70, '파일 저장 중...');
 
+    // Re-check currentVideo in case it changed during dialog
+    // (e.g., if another operation completed while dialog was open)
+    const actualVideoToExport = currentVideo || videoToExport;
+    console.log('[Export Video] Exporting from:', actualVideoToExport);
+
     // Copy file to destination
     const copyResult = await window.electronAPI.copyFile({
-      sourcePath: videoToExport,
+      sourcePath: actualVideoToExport,
       destPath: savePath
     });
 
     if (!copyResult.success) {
+      // If copy failed, check if it's because the source file doesn't exist
+      if (copyResult.error && copyResult.error.includes('ENOENT')) {
+        throw new Error('원본 파일을 찾을 수 없습니다.\n저장 다이얼로그가 열려있는 동안 다른 편집 작업이 진행된 것 같습니다.\n다시 시도해 주세요.');
+      }
       throw new Error(copyResult.error || '파일 저장 실패');
     }
 
