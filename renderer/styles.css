@@ -860,3 +860,87 @@ input[type="color"] {
   border: none;
   cursor: pointer;
 }
+
+/* Blocking Overlay */
+.blocking-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: wait;
+}
+
+.blocking-content {
+  text-align: center;
+  color: white;
+  padding: 40px;
+  background: rgba(30, 30, 30, 0.95);
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  min-width: 300px;
+}
+
+.spinner-container {
+  margin-bottom: 25px;
+}
+
+.spinner {
+  width: 60px;
+  height: 60px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.blocking-message {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #e0e0e0;
+}
+
+.blocking-submessage {
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 20px;
+}
+
+.progress-container {
+  width: 100%;
+}
+
+.progress-bar-blocking {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.progress-fill-blocking {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-text-blocking {
+  font-size: 14px;
+  color: #aaa;
+}

@@ -250,6 +250,23 @@
     </footer>
   </div>
 
+  <!-- Blocking Overlay (Processing) -->
+  <div id="blocking-overlay" class="blocking-overlay" style="display: none;">
+    <div class="blocking-content">
+      <div class="spinner-container">
+        <div class="spinner"></div>
+      </div>
+      <div id="blocking-message" class="blocking-message">처리 중...</div>
+      <div id="blocking-submessage" class="blocking-submessage">잠시만 기다려 주세요</div>
+      <div class="progress-container">
+        <div class="progress-bar-blocking">
+          <div id="progress-bar" class="progress-fill-blocking"></div>
+        </div>
+        <div id="progress-text" class="progress-text-blocking">0%</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modals -->
   <div id="modal-overlay" class="modal-overlay" style="display: none;">
     <div id="modal-content" class="modal-content"></div>

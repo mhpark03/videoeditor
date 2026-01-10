@@ -69,49 +69,72 @@ export function closeCustomDialog() {
 }
 
 // ============================================================================
-// Progress Display
+// Progress Display (Blocking Overlay)
 // ============================================================================
 
 /**
- * Show progress overlay
+ * Show blocking overlay with progress
+ * @param {string} message - Main message to display
+ * @param {string} submessage - Sub message to display
  */
-export function showProgress() {
-  const progressOverlay = document.getElementById('progress-overlay');
-  if (progressOverlay) {
-    progressOverlay.style.display = 'flex';
+export function showProgress(message = '처리 중...', submessage = '잠시만 기다려 주세요') {
+  const blockingOverlay = document.getElementById('blocking-overlay');
+  const blockingMessage = document.getElementById('blocking-message');
+  const blockingSubmessage = document.getElementById('blocking-submessage');
+
+  if (blockingOverlay) {
+    blockingOverlay.style.display = 'flex';
   }
+
+  if (blockingMessage && message) {
+    blockingMessage.textContent = message;
+  }
+
+  if (blockingSubmessage && submessage) {
+    blockingSubmessage.textContent = submessage;
+  }
+
+  // Reset progress bar
+  updateProgress(0, '');
+
+  // Also disable buttons as backup
+  disableAllButtons();
 }
 
 /**
- * Hide progress overlay
+ * Hide blocking overlay
  */
 export function hideProgress() {
-  const progressOverlay = document.getElementById('progress-overlay');
-  if (progressOverlay) {
-    progressOverlay.style.display = 'none';
+  const blockingOverlay = document.getElementById('blocking-overlay');
+  if (blockingOverlay) {
+    blockingOverlay.style.display = 'none';
   }
+
+  // Re-enable buttons
+  enableAllButtons();
 }
 
 /**
  * Update progress display
  * @param {number} percent - Progress percentage (0-100)
- * @param {string} message - Progress message
+ * @param {string} message - Progress message (optional - updates submessage)
  */
 export function updateProgress(percent, message) {
   const progressBar = document.getElementById('progress-bar');
   const progressText = document.getElementById('progress-text');
-  const progressPercentage = document.getElementById('progress-percentage');
+  const blockingSubmessage = document.getElementById('blocking-submessage');
 
   if (progressBar) {
     progressBar.style.width = `${percent}%`;
   }
 
   if (progressText) {
-    progressText.textContent = message || '';
+    progressText.textContent = `${Math.round(percent)}%`;
   }
 
-  if (progressPercentage) {
-    progressPercentage.textContent = `${Math.round(percent)}%`;
+  // Update submessage with progress details
+  if (blockingSubmessage && message) {
+    blockingSubmessage.textContent = message;
   }
 }
 
