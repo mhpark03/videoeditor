@@ -1676,13 +1676,13 @@ ipcMain.handle('add-audio', async (event, options) => {
         } else if (mode === 'overwrite') {
           // Overwrite: Replace audio in specified range with new audio
           // Get audio duration and video duration
-          const getDuration = (path) => {
+          const getDuration = (filePath) => {
             return new Promise((resolve) => {
               const ffprobe = spawn(ffprobePath, [
                 '-v', 'error',
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
-                path
+                filePath
               ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
               let output = '';
@@ -1695,19 +1695,25 @@ ipcMain.handle('add-audio', async (event, options) => {
           const videoDuration = await getDuration(videoPath);
           const endTime = audioStartTime + audioDuration;
 
-          // Complex filter: extract before/after segments and insert new audio, then pad to video duration
+          logInfo('ADD_AUDIO_OVERWRITE', 'Overwrite mode durations', {
+            audioStartTime, audioDuration, endTime, videoDuration
+          });
+
+          // Use amix with volume control for cleaner overwrite
+          // Mute original audio in the overwrite range, then mix with new audio
           args = [
             '-i', videoPath,
             '-i', audioPath,
             '-filter_complex',
-            `[0:a]aselect='lt(t,${audioStartTime})',asetpts=N/SR/TB[before];` +
-            `[1:a]volume=${volumeLevel}[new];` +
-            `[0:a]aselect='gte(t,${endTime})',asetpts=N/SR/TB[after];` +
-            `[before][new][after]concat=n=3:v=0:a=1,apad=whole_dur=${videoDuration}[aout]`,
+            // Lower original audio volume to 0 during overwrite range, new audio plays at specified volume
+            `[0:a]volume=enable='between(t,${audioStartTime},${endTime})':volume=0[orig];` +
+            `[1:a]volume=${volumeLevel},adelay=${startTimeMs}|${startTimeMs}[new];` +
+            `[orig][new]amix=inputs=2:duration=first:dropout_transition=0,atrim=0:${videoDuration}[aout]`,
             '-map', '0:v',
             '-map', '[aout]',
             '-c:v', 'copy',
             '-c:a', 'aac',
+            '-t', videoDuration.toString(),
             '-y',
             actualOutputPath
           ];
