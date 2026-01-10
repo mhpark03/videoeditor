@@ -1,0 +1,79 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  // File selection
+  selectVideo: () => ipcRenderer.invoke('select-video'),
+  selectAudio: () => ipcRenderer.invoke('select-audio'),
+  selectMedia: (mediaType) => ipcRenderer.invoke('select-media', mediaType),
+  selectOutput: (defaultName) => ipcRenderer.invoke('select-output', defaultName),
+
+  // Video info
+  getVideoInfo: (videoPath) => ipcRenderer.invoke('get-video-info', videoPath),
+  generateWaveform: (videoPath) => ipcRenderer.invoke('generate-waveform', videoPath),
+  generateWaveformRange: (options) => ipcRenderer.invoke('generate-waveform-range', options),
+  generateWaveformFromUrl: (videoUrl) => ipcRenderer.invoke('generate-waveform-from-url', videoUrl),
+
+  // Video operations
+  trimVideo: (options) => ipcRenderer.invoke('trim-video', options),
+  reEncodeVideo: (options) => ipcRenderer.invoke('re-encode-video', options),
+  trimVideoOnly: (options) => ipcRenderer.invoke('trim-video-only', options),
+  trimAudioOnly: (options) => ipcRenderer.invoke('trim-audio-only', options),
+  trimAudioFile: (options) => ipcRenderer.invoke('trim-audio-file', options),
+  addAudio: (options) => ipcRenderer.invoke('add-audio', options),
+  adjustAudioVolume: (options) => ipcRenderer.invoke('adjust-audio-volume', options),
+  adjustAudioSpeed: (options) => ipcRenderer.invoke('adjust-audio-speed', options),
+  applyFilter: (options) => ipcRenderer.invoke('apply-filter', options),
+  mergeVideos: (options) => ipcRenderer.invoke('merge-videos', options),
+  mergeAudios: (options) => ipcRenderer.invoke('merge-audios', options),
+  addText: (options) => ipcRenderer.invoke('add-text', options),
+  extractAudio: (options) => ipcRenderer.invoke('extract-audio', options),
+  generateSilenceFile: (options) => ipcRenderer.invoke('generate-silence-file', options),
+  copyAudioFile: (options) => ipcRenderer.invoke('copy-audio-file', options),
+  deleteTempFile: (filePath) => ipcRenderer.invoke('delete-temp-file', filePath),
+  ensureVideoHasAudio: (videoPath) => ipcRenderer.invoke('ensure-video-has-audio', videoPath),
+
+  // Progress listener
+  onFFmpegProgress: (callback) => {
+    ipcRenderer.on('ffmpeg-progress', (event, message) => callback(message));
+  },
+
+  // Log listener
+  onLogEntry: (callback) => {
+    ipcRenderer.on('log-entry', (event, logData) => callback(logData));
+  },
+
+  // Mode switch listener
+  onModeSwitch: (callback) => {
+    ipcRenderer.on('switch-mode', (event, mode) => callback(mode));
+  },
+
+  // Shell operations
+  openPath: (path) => ipcRenderer.invoke('open-path', path),
+
+  // TTS operations
+  generateTtsDirect: (params) => ipcRenderer.invoke('generate-tts-direct', params),
+  selectAudioSavePath: (defaultName) => ipcRenderer.invoke('select-audio-save-path', defaultName),
+
+  // Runway ML operations
+  generateImageRunway: (params) => ipcRenderer.invoke('generate-image-runway', params),
+  generateVideoRunway: (params) => ipcRenderer.invoke('generate-video-runway', params),
+  pollRunwayTask: (taskId) => ipcRenderer.invoke('poll-runway-task', taskId),
+  downloadRunwayVideo: (videoUrl) => ipcRenderer.invoke('download-runway-video', videoUrl),
+
+  // Google VEO operations (using Gemini API with API Key - matching backend)
+  generateVeoVideo: (params) => ipcRenderer.invoke('generate-veo-video', params),
+
+  // Backend authentication
+  backendLogin: (params) => ipcRenderer.invoke('backend-login', params),
+
+  // File download
+  downloadFile: (url, filename) => ipcRenderer.invoke('download-file', url, filename),
+
+  // Focus webContents (workaround for input activation)
+  focusWebContents: () => ipcRenderer.invoke('focus-webcontents'),
+  // Imagen operations (using Gemini API with API Key)
+  generateImagenImage: (params) => ipcRenderer.invoke('generate-imagen-image', params),
+
+  // File reading for audio preview
+  readAudioFile: (filePath) => ipcRenderer.invoke('read-audio-file', filePath),
+});
