@@ -3031,30 +3031,60 @@ ipcMain.handle('add-subtitles', async (event, options) => {
     position: 'bottom'  // bottom, middle, top
   };
 
+  // Get video dimensions to adjust margins for vertical videos
+  let videoWidth = 1920, videoHeight = 1080;
+  try {
+    const videoInfo = await getVideoInfo(videoPath);
+    const videoStream = videoInfo.streams.find(s => s.codec_type === 'video');
+    if (videoStream) {
+      videoWidth = videoStream.width || 1920;
+      videoHeight = videoStream.height || 1080;
+
+      // Check for rotation and swap if needed
+      let rotation = 0;
+      if (videoStream.tags && videoStream.tags.rotate) {
+        rotation = parseInt(videoStream.tags.rotate) || 0;
+      }
+      if (rotation === 90 || rotation === 270 || rotation === -90 || rotation === -270) {
+        const temp = videoWidth;
+        videoWidth = videoHeight;
+        videoHeight = temp;
+      }
+    }
+  } catch (e) {
+    logError('ADD_SUBTITLES_INFO_ERROR', 'Failed to get video info', { error: e.message });
+  }
+
+  const isVerticalVideo = videoHeight > videoWidth;
+  logInfo('ADD_SUBTITLES_DIMENSIONS', 'Video dimensions', { videoWidth, videoHeight, isVerticalVideo });
+
   // Build subtitle filter
   // Need to escape special characters in path for FFmpeg filter
   const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
-  // Margin settings based on position
+  // Margin settings based on position and video orientation
   // MarginV: vertical margin (larger value = further from edge)
-  // MarginL/MarginR: horizontal margins to prevent text overflow
-  // MarginV should be proportional to font size to prevent cut-off
+  // For vertical videos, use smaller margins since ASS coordinates are based on horizontal aspect
   const fontSize = style.fontSize || 24;
   let marginV, alignment;
+
+  // Adjust margin based on video orientation
+  const marginMultiplier = isVerticalVideo ? 0.3 : 1.0;  // Reduce margin for vertical videos
+
   if (style.position === 'top') {
-    marginV = Math.max(40, fontSize + 20);
+    marginV = Math.round(20 * marginMultiplier);
     alignment = 8;  // Top center in ASS
   } else if (style.position === 'middle') {
     marginV = 0;
     alignment = 5;  // Middle center in ASS
   } else {
-    marginV = Math.max(60, fontSize * 2);  // Bottom with larger margin
+    marginV = Math.round(20 * marginMultiplier);  // Bottom - small margin
     alignment = 2;  // Bottom center in ASS
   }
 
   // Build force_style string with proper margins and wrapping
   // WrapStyle=1 enables smart wrapping
-  const forceStyle = `FontSize=${style.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=${style.outlineWidth},MarginV=${marginV},MarginL=40,MarginR=40,Alignment=${alignment},WrapStyle=1`;
+  const forceStyle = `FontSize=${style.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=${style.outlineWidth},MarginV=${marginV},MarginL=20,MarginR=20,Alignment=${alignment},WrapStyle=1`;
 
   return new Promise((resolve, reject) => {
     const args = [

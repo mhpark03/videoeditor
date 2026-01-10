@@ -6254,7 +6254,22 @@ function showExportDialog() {
 function setupFFmpegProgressListener() {
   window.electronAPI.onFFmpegProgress((message) => {
     // Parse FFmpeg output for progress updates
-    // This is simplified - real implementation would parse time codes
+    // FFmpeg outputs: time=00:00:04.10 or similar
+    const timeMatch = message.match(/time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})/);
+    if (timeMatch && videoInfo && videoInfo.format && videoInfo.format.duration) {
+      const hours = parseInt(timeMatch[1]);
+      const minutes = parseInt(timeMatch[2]);
+      const seconds = parseInt(timeMatch[3]);
+      const centiseconds = parseInt(timeMatch[4]);
+
+      const currentTime = hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
+      const totalDuration = parseFloat(videoInfo.format.duration);
+
+      if (totalDuration > 0) {
+        const percent = Math.min(95, Math.round((currentTime / totalDuration) * 100));
+        updateProgress(percent, `처리 중... ${Math.round(currentTime)}초 / ${Math.round(totalDuration)}초`);
+      }
+    }
   });
 }
 
