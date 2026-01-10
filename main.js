@@ -2066,6 +2066,46 @@ ipcMain.handle('merge-videos', async (event, options) => {
     });
   };
 
+  // Helper function to get video dimensions
+  const getVideoDimensions = (videoPath) => {
+    return new Promise((resolve, reject) => {
+      const ffprobe = spawn(ffprobePath, [
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        '-select_streams', 'v:0',
+        videoPath
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let output = '';
+
+      ffprobe.stdout.on('data', (data) => {
+        output += data.toString('utf8');
+      });
+
+      ffprobe.on('close', (code) => {
+        if (code === 0 && output) {
+          try {
+            const info = JSON.parse(output);
+            const videoStream = info.streams && info.streams[0];
+            if (videoStream && videoStream.width && videoStream.height) {
+              resolve({ width: videoStream.width, height: videoStream.height });
+            } else {
+              resolve({ width: 1920, height: 1080 }); // Default fallback
+            }
+          } catch (err) {
+            resolve({ width: 1920, height: 1080 }); // Default fallback
+          }
+        } else {
+          resolve({ width: 1920, height: 1080 }); // Default fallback
+        }
+      });
+    });
+  };
+
   return new Promise(async (resolve, reject) => {
     try {
       // Check all videos for audio and add silent audio if missing
@@ -2123,6 +2163,12 @@ ipcMain.handle('merge-videos', async (event, options) => {
         transitionEffect = transition.substring(6); // Extract effect name after 'xfade-'
       }
 
+      // Get the first video's dimensions to use as target resolution
+      const targetDimensions = await getVideoDimensions(videoPaths[0]);
+      const targetWidth = targetDimensions.width;
+      const targetHeight = targetDimensions.height;
+      logInfo('MERGE_TARGET_RESOLUTION', 'Using first video resolution as target', { targetWidth, targetHeight });
+
       // Build filter chain based on transition type
       if (transitionType === 'xfade') {
         // Get durations of all videos
@@ -2130,7 +2176,7 @@ ipcMain.handle('merge-videos', async (event, options) => {
 
         // Normalize all videos first (all videos guaranteed to have audio at this point)
         for (let i = 0; i < videoPaths.length; i++) {
-          filterComplex += `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
+          filterComplex += `[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
           filterComplex += `[${i}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${i}];`; // Resample to 48000Hz stereo (higher quality)
         }
 
@@ -2154,7 +2200,7 @@ ipcMain.handle('merge-videos', async (event, options) => {
 
         // Normalize all videos first
         for (let i = 0; i < videoPaths.length; i++) {
-          filterComplex += `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
+          filterComplex += `[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
           filterComplex += `[${i}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${i}];`;
         }
 
@@ -2182,7 +2228,7 @@ ipcMain.handle('merge-videos', async (event, options) => {
       } else {
         // Simple concatenation - normalize videos and concat with audio (all videos guaranteed to have audio)
         for (let i = 0; i < videoPaths.length; i++) {
-          filterComplex += `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
+          filterComplex += `[${i}:v]scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,pad=${targetWidth}:${targetHeight}:(ow-iw)/2:(oh-ih)/2,setsar=1[v${i}];`;
           filterComplex += `[${i}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${i}];`; // Resample to 48000Hz stereo (higher quality)
         }
         // Concat both video and audio
