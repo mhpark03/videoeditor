@@ -2305,6 +2305,21 @@ ipcMain.handle('merge-audios', async (event, options) => {
 });
 
 // Add text/subtitle overlay
+// Helper function to escape text for FFmpeg drawtext filter
+function escapeTextForFFmpeg(text) {
+  if (!text) return '';
+  return text
+    .replace(/\\/g, '\\\\')           // Escape backslashes first
+    .replace(/'/g, "'\\''")            // Escape single quotes
+    .replace(/:/g, '\\:')              // Escape colons
+    .replace(/\[/g, '\\[')             // Escape brackets
+    .replace(/\]/g, '\\]')
+    .replace(/\n/g, ' ')               // Replace newlines with spaces
+    .replace(/\r/g, '')                // Remove carriage returns
+    .replace(/;/g, '\\;')              // Escape semicolons
+    .replace(/,/g, '\\,');             // Escape commas
+}
+
 ipcMain.handle('add-text', async (event, options) => {
   let { inputPath, outputPath, text, fontSize, fontColor, fontFamily, fontStyle, position, startTime, duration } = options;
 
@@ -2317,7 +2332,10 @@ ipcMain.handle('add-text', async (event, options) => {
     outputPath = path.join(tempDir, `${fileName}_text_${timestamp}.mp4`);
   }
 
-  logInfo('ADD_TEXT_START', 'Adding text overlay', { text, fontSize, outputPath });
+  // Escape text for FFmpeg filter
+  const escapedText = escapeTextForFFmpeg(text);
+
+  logInfo('ADD_TEXT_START', 'Adding text overlay', { originalText: text, escapedText, fontSize, outputPath });
 
   return new Promise(async (resolve, reject) => {
     try {
@@ -2382,7 +2400,7 @@ ipcMain.handle('add-text', async (event, options) => {
 
           // Step 2: Extract segment with text and apply text overlay (encode)
           await new Promise((res, rej) => {
-            const filterString = `drawtext=text='${text}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
+            const filterString = `drawtext=text='${escapedText}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
             const args2 = [
               '-i', inputPath,
               '-ss', startTime.toString(),
@@ -2481,7 +2499,7 @@ ipcMain.handle('add-text', async (event, options) => {
       // Fallback to standard approach (process entire video)
       logInfo('ADD_TEXT_STANDARD', 'Using standard full-video approach');
 
-      let filterString = `drawtext=text='${text}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
+      let filterString = `drawtext=text='${escapedText}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
 
       if (startTime !== undefined && duration !== undefined) {
         filterString += `:enable='between(t,${startTime},${startTime + duration})'`;
