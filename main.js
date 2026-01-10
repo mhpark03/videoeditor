@@ -1662,14 +1662,17 @@ ipcMain.handle('add-audio', async (event, options) => {
 
           const videoDuration = await getVideoDuration();
 
+          logInfo('ADD_AUDIO_MIX', 'Mix mode duration', { videoDuration, audioStartTime });
+
           args = [
             '-i', videoPath,
             '-i', audioPath,
-            '-filter_complex', `[1:a]volume=${volumeLevel},adelay=${startTimeMs}|${startTimeMs}[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2,apad=whole_dur=${videoDuration}[aout]`,
+            '-filter_complex', `[1:a]volume=${volumeLevel},adelay=${startTimeMs}|${startTimeMs}[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=2,atrim=0:${videoDuration}[aout]`,
             '-map', '0:v',
             '-map', '[aout]',
             '-c:v', 'copy',
             '-c:a', 'aac',
+            '-t', videoDuration.toString(),
             '-y',
             actualOutputPath
           ];
@@ -1719,14 +1722,14 @@ ipcMain.handle('add-audio', async (event, options) => {
           ];
         } else if (mode === 'push') {
           // Push: Insert new audio and push existing audio backward
-          // Get audio duration from audioPath
-          const getAudioDuration = () => {
+          // But video length must stay the same - audio at the end gets cut off
+          const getDuration = (filePath) => {
             return new Promise((resolve) => {
               const ffprobe = spawn(ffprobePath, [
                 '-v', 'error',
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
-                audioPath
+                filePath
               ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
               let output = '';
@@ -1735,10 +1738,15 @@ ipcMain.handle('add-audio', async (event, options) => {
             });
           };
 
-          const audioDuration = await getAudioDuration();
+          const audioDuration = await getDuration(audioPath);
+          const videoDuration = await getDuration(videoPath);
+
+          logInfo('ADD_AUDIO_PUSH', 'Push mode durations', {
+            audioStartTime, audioDuration, videoDuration
+          });
 
           // Split original audio: before insertion point and after
-          // Then concatenate: before + new audio + after (with delay)
+          // Concatenate: before + new audio + after, then trim to video duration
           args = [
             '-i', videoPath,
             '-i', audioPath,
@@ -1746,18 +1754,19 @@ ipcMain.handle('add-audio', async (event, options) => {
             `[0:a]aselect='lt(t,${audioStartTime})',asetpts=N/SR/TB[before];` +
             `[1:a]volume=${volumeLevel}[new];` +
             `[0:a]aselect='gte(t,${audioStartTime})',asetpts=N/SR/TB[after];` +
-            `[before][new][after]concat=n=3:v=0:a=1[aout]`,
+            `[before][new][after]concat=n=3:v=0:a=1,atrim=0:${videoDuration},apad=whole_dur=${videoDuration}[aout]`,
             '-map', '0:v',
             '-map', '[aout]',
             '-c:v', 'copy',
             '-c:a', 'aac',
+            '-t', videoDuration.toString(),
             '-y',
             actualOutputPath
           ];
         }
       } else {
         // Video has no audio - add audio as new track
-        // Get video duration and pad audio to match
+        // Get video duration and pad/trim audio to match
         const getVideoDuration = () => {
           return new Promise((resolve) => {
             const ffprobe = spawn(ffprobePath, [
@@ -1775,14 +1784,17 @@ ipcMain.handle('add-audio', async (event, options) => {
 
         const videoDuration = await getVideoDuration();
 
+        logInfo('ADD_AUDIO_NO_AUDIO', 'Adding audio to video without audio', { videoDuration, audioStartTime });
+
         args = [
           '-i', videoPath,
           '-i', audioPath,
-          '-filter_complex', `[1:a]volume=${volumeLevel},adelay=${startTimeMs}|${startTimeMs},apad=whole_dur=${videoDuration}[a1]`,
+          '-filter_complex', `[1:a]volume=${volumeLevel},adelay=${startTimeMs}|${startTimeMs},atrim=0:${videoDuration},apad=whole_dur=${videoDuration}[a1]`,
           '-map', '0:v',
           '-map', '[a1]',
           '-c:v', 'copy',
           '-c:a', 'aac',
+          '-t', videoDuration.toString(),
           '-y',
           actualOutputPath
         ];
