@@ -3623,27 +3623,16 @@ function updateTextOverlay(currentTime) {
   const video = document.getElementById('preview-video');
   if (!video || !video.videoWidth || !video.videoHeight) return;
 
-  // Calculate video's actual display position and size (object-fit: contain)
+  // Get the actual video element position and size
   const videoContainer = video.parentElement;
   const containerRect = videoContainer.getBoundingClientRect();
-  const videoAspect = video.videoWidth / video.videoHeight;
-  const containerAspect = containerRect.width / containerRect.height;
+  const videoRect = video.getBoundingClientRect();
 
-  let displayWidth, displayHeight, offsetX, offsetY;
-
-  if (containerAspect > videoAspect) {
-    // Container is wider - video limited by height
-    displayHeight = containerRect.height;
-    displayWidth = displayHeight * videoAspect;
-    offsetX = (containerRect.width - displayWidth) / 2;
-    offsetY = 0;
-  } else {
-    // Container is taller - video limited by width
-    displayWidth = containerRect.width;
-    displayHeight = displayWidth / videoAspect;
-    offsetX = 0;
-    offsetY = (containerRect.height - displayHeight) / 2;
-  }
+  // Calculate offset relative to container
+  const offsetX = videoRect.left - containerRect.left;
+  const offsetY = videoRect.top - containerRect.top;
+  const displayWidth = videoRect.width;
+  const displayHeight = videoRect.height;
 
   // Calculate scale factor (display size vs original video resolution)
   const scaleFactor = displayWidth / video.videoWidth;
