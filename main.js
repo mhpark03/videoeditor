@@ -2982,15 +2982,17 @@ ipcMain.handle('add-subtitles', async (event, options) => {
   // Margin settings based on position
   // MarginV: vertical margin (larger value = further from edge)
   // MarginL/MarginR: horizontal margins to prevent text overflow
+  // MarginV should be proportional to font size to prevent cut-off
+  const fontSize = style.fontSize || 24;
   let marginV, alignment;
   if (style.position === 'top') {
-    marginV = 30;
+    marginV = Math.max(40, fontSize + 20);
     alignment = 8;  // Top center in ASS
   } else if (style.position === 'middle') {
     marginV = 0;
     alignment = 5;  // Middle center in ASS
   } else {
-    marginV = 40;   // Bottom with good margin
+    marginV = Math.max(60, fontSize * 2);  // Bottom with larger margin
     alignment = 2;  // Bottom center in ASS
   }
 
