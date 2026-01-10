@@ -3696,7 +3696,6 @@ function updateTextOverlay(currentTime) {
     actualVideoHeight = displayHeight;
   }
 
-  console.log('[TextOverlay] Video dimensions:', actualVideoWidth, 'x', actualVideoHeight, 'Display:', displayWidth, 'x', displayHeight);
   const scaleFactor = displayWidth / actualVideoWidth;
 
   // Show and update overlay - wrap text in span for flex alignment to work

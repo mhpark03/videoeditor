@@ -120,9 +120,27 @@ export function hideProgress() {
  * @param {string} message - Progress message (optional - updates submessage)
  */
 export function updateProgress(percent, message) {
+  // Update blocking overlay progress (main progress display)
+  const blockingProgressBar = document.getElementById('blocking-progress-bar');
+  const blockingProgressText = document.getElementById('blocking-progress-text');
+  const blockingSubmessage = document.getElementById('blocking-submessage');
+
+  if (blockingProgressBar) {
+    blockingProgressBar.style.width = `${percent}%`;
+  }
+
+  if (blockingProgressText) {
+    blockingProgressText.textContent = `${Math.round(percent)}%`;
+  }
+
+  // Update submessage with progress details
+  if (blockingSubmessage && message) {
+    blockingSubmessage.textContent = message;
+  }
+
+  // Also update properties panel progress (for backwards compatibility)
   const progressBar = document.getElementById('progress-bar');
   const progressText = document.getElementById('progress-text');
-  const blockingSubmessage = document.getElementById('blocking-submessage');
 
   if (progressBar) {
     progressBar.style.width = `${percent}%`;
@@ -130,11 +148,6 @@ export function updateProgress(percent, message) {
 
   if (progressText) {
     progressText.textContent = `${Math.round(percent)}%`;
-  }
-
-  // Update submessage with progress details
-  if (blockingSubmessage && message) {
-    blockingSubmessage.textContent = message;
   }
 }
 
