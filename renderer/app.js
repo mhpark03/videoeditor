@@ -2476,7 +2476,8 @@ async function loadVideoWithAudioCheck(videoPath) {
 }
 
 // Load video
-async function loadVideo(path) {
+// options.preserveTool: if true, keeps the current tool and properties panel intact
+async function loadVideo(path, options = {}) {
   try {
     // Reset volume preview button if exists
     const previewBtn = document.getElementById('preview-video-volume-btn');
@@ -2521,26 +2522,28 @@ async function loadVideo(path) {
 
     document.getElementById('current-file').textContent = path.split('\\').pop();
 
-    // 도구 선택 초기화 (영상 자르기 설정 제거)
-    activeTool = null;
-    document.querySelectorAll('.tool-btn').forEach(btn => {
-      btn.classList.remove('active');
-    });
-    document.getElementById('tool-properties').innerHTML = '<p class="placeholder-text">편집 도구를 선택하세요</p>';
+    // 도구 선택 초기화 (preserveTool 옵션이 없을 때만)
+    if (!options.preserveTool) {
+      activeTool = null;
+      document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById('tool-properties').innerHTML = '<p class="placeholder-text">편집 도구를 선택하세요</p>';
 
-    // 오디오 관련 상태 초기화
-    selectedAudioFile = null;
-    selectedAudioDuration = 0;
-    if (audioPreviewElement) {
-      audioPreviewElement.pause();
-      audioPreviewElement = null;
+      // 오디오 관련 상태 초기화
+      selectedAudioFile = null;
+      selectedAudioDuration = 0;
+      if (audioPreviewElement) {
+        audioPreviewElement.pause();
+        audioPreviewElement = null;
+      }
+
+      // 타임라인 오버레이 숨기기
+      const trimOverlay = document.getElementById('trim-range-overlay');
+      const audioOverlay = document.getElementById('audio-range-overlay');
+      if (trimOverlay) trimOverlay.style.display = 'none';
+      if (audioOverlay) audioOverlay.style.display = 'none';
     }
-
-    // 타임라인 오버레이 숨기기
-    const trimOverlay = document.getElementById('trim-range-overlay');
-    const audioOverlay = document.getElementById('audio-range-overlay');
-    if (trimOverlay) trimOverlay.style.display = 'none';
-    if (audioOverlay) audioOverlay.style.display = 'none';
   } catch (error) {
     handleError('영상 로드', error, '영상을 불러오는데 실패했습니다.');
   }
@@ -5946,7 +5949,7 @@ async function executeAddText() {
     }
 
     alert('텍스트 추가 완료!\n\n다른 텍스트를 추가하려면 새 텍스트를 입력하세요.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.');
-    loadVideo(result.outputPath);
+    await loadVideo(result.outputPath, { preserveTool: true });
     currentVideo = result.outputPath;
     hasSilentAudio = false;  // Video has been edited, no longer original silent track
 

@@ -2346,11 +2346,18 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
     // Calculate y position for each line
     let yPos;
 
-    if (baseY.includes('h-text_h') || baseY.includes('(h-')) {
+    // Check position type:
+    // - Center: (h-text_h)/2 - contains '/2'
+    // - Bottom: (h-text_h-30) - contains 'h-text_h' but NOT '/2'
+    // - Top: 30 - numeric value
+    const isCenter = baseY.includes('/2');
+    const isBottom = baseY.includes('h-text_h') && !baseY.includes('/2');
+
+    if (isCenter) {
       // Center vertically
       const lineOffset = index * lineHeight;
       yPos = `max(10\\,min(h-${fontSize}-10\\,(h-${totalHeight})/2+${lineOffset}))`;
-    } else if (baseY.includes('h-') || baseY === 'bottom') {
+    } else if (isBottom) {
       // Bottom position - start from bottom, go up
       const bottomOffset = (allLines.length - 1 - index) * lineHeight + 40;
       yPos = `max(10\\,h-${bottomOffset}-${fontSize})`;
