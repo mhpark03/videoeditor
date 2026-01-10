@@ -5919,7 +5919,33 @@ async function executeAddText() {
     });
 
     hideProgress();
-    alert('텍스트 추가 완료!\n\n편집된 내용은 임시 저장되었습니다.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.');
+
+    // Clear text input for next text entry
+    const textContent = document.getElementById('text-content');
+    if (textContent) {
+      textContent.value = '';
+    }
+
+    // Clear time inputs
+    const textStart = document.getElementById('text-start');
+    const textEnd = document.getElementById('text-end');
+    if (textStart) textStart.value = '';
+    if (textEnd) textEnd.value = '';
+
+    // Hide text preview overlay
+    const textOverlay = document.getElementById('text-overlay');
+    if (textOverlay) {
+      textOverlay.style.display = 'none';
+      textOverlay.textContent = '';
+    }
+
+    // Hide range overlay
+    const textRangeOverlay = document.getElementById('text-range-overlay');
+    if (textRangeOverlay) {
+      textRangeOverlay.style.display = 'none';
+    }
+
+    alert('텍스트 추가 완료!\n\n다른 텍스트를 추가하려면 새 텍스트를 입력하세요.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.');
     loadVideo(result.outputPath);
     currentVideo = result.outputPath;
     hasSilentAudio = false;  // Video has been edited, no longer original silent track
