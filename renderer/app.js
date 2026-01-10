@@ -3628,14 +3628,76 @@ function updateTextOverlay(currentTime) {
   const containerRect = videoContainer.getBoundingClientRect();
   const videoRect = video.getBoundingClientRect();
 
-  // Calculate offset relative to container
-  const offsetX = videoRect.left - containerRect.left;
-  const offsetY = videoRect.top - containerRect.top;
-  const displayWidth = videoRect.width;
-  const displayHeight = videoRect.height;
+  // Calculate actual video display size accounting for object-fit: contain
+  // The video element rect is the container, not the actual video display area
+  const videoAspect = video.videoWidth / video.videoHeight;
+  const containerAspect = videoRect.width / videoRect.height;
+
+  let displayWidth, displayHeight, videoOffsetX, videoOffsetY;
+
+  if (containerAspect > videoAspect) {
+    // Container is wider than video - video is height-limited
+    displayHeight = videoRect.height;
+    displayWidth = displayHeight * videoAspect;
+    videoOffsetX = (videoRect.width - displayWidth) / 2;
+    videoOffsetY = 0;
+  } else {
+    // Container is taller than video - video is width-limited
+    displayWidth = videoRect.width;
+    displayHeight = displayWidth / videoAspect;
+    videoOffsetX = 0;
+    videoOffsetY = (videoRect.height - displayHeight) / 2;
+  }
+
+  // Calculate offset relative to container (including video letterbox offset)
+  const offsetX = videoRect.left - containerRect.left + videoOffsetX;
+  const offsetY = videoRect.top - containerRect.top + videoOffsetY;
 
   // Calculate scale factor (display size vs original video resolution)
-  const scaleFactor = displayWidth / video.videoWidth;
+  // Use HTML video element's videoWidth/videoHeight - these reflect the actual
+  // displayed dimensions after browser applies rotation
+  let actualVideoWidth = video.videoWidth;
+  let actualVideoHeight = video.videoHeight;
+
+  // Fallback if video element dimensions are not available
+  if (!actualVideoWidth || actualVideoWidth <= 0) {
+    // Try videoInfo from FFprobe with rotation handling
+    if (videoInfo && videoInfo.streams) {
+      const videoStream = videoInfo.streams.find(s => s.codec_type === 'video');
+      if (videoStream && videoStream.width && videoStream.height) {
+        actualVideoWidth = videoStream.width;
+        actualVideoHeight = videoStream.height;
+
+        // Check for rotation metadata
+        let rotation = 0;
+        if (videoStream.tags && videoStream.tags.rotate) {
+          rotation = parseInt(videoStream.tags.rotate) || 0;
+        } else if (videoStream.side_data_list) {
+          const displayMatrix = videoStream.side_data_list.find(sd => sd.side_data_type === 'Display Matrix');
+          if (displayMatrix && displayMatrix.rotation) {
+            rotation = Math.abs(parseInt(displayMatrix.rotation)) || 0;
+          }
+        }
+
+        // Swap dimensions for 90 or 270 degree rotation
+        if (rotation === 90 || rotation === 270 || rotation === -90 || rotation === -270) {
+          const temp = actualVideoWidth;
+          actualVideoWidth = actualVideoHeight;
+          actualVideoHeight = temp;
+        }
+      }
+    }
+  }
+
+  // Final fallback to display dimensions
+  if (!actualVideoWidth || actualVideoWidth <= 0) {
+    console.warn('[TextOverlay] Invalid video width, using display dimensions');
+    actualVideoWidth = displayWidth;
+    actualVideoHeight = displayHeight;
+  }
+
+  console.log('[TextOverlay] Video dimensions:', actualVideoWidth, 'x', actualVideoHeight, 'Display:', displayWidth, 'x', displayHeight);
+  const scaleFactor = displayWidth / actualVideoWidth;
 
   // Show and update overlay - wrap text in span for flex alignment to work
   textOverlay.style.display = 'flex';

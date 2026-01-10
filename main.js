@@ -2423,7 +2423,9 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
       xPos = baseX;
     }
 
-    let filter = `drawtext=text='${escapedLine}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${xPos}:y=${yPos}`;
+    // Convert color from #ffffff to 0xffffff format for FFmpeg compatibility
+    const ffmpegColor = fontColor.startsWith('#') ? '0x' + fontColor.slice(1) : fontColor;
+    let filter = `drawtext=text='${escapedLine}':font='${fontName}':fontsize=${fontSize}:fontcolor=${ffmpegColor}:x=${xPos}:y=${yPos}`;
 
     if (enableClause) {
       filter += `:enable='${enableClause}'`;
@@ -2518,7 +2520,11 @@ ipcMain.handle('add-text', async (event, options) => {
               '-ss', startTime.toString(),
               '-t', duration.toString(),
               '-vf', filterString,
+              '-c:v', 'libx264',
+              '-preset', 'medium',
+              '-crf', '18',
               '-c:a', 'copy',
+              '-metadata:s:v', 'rotate=0',
               '-y',
               segment2Path
             ];
@@ -2622,7 +2628,11 @@ ipcMain.handle('add-text', async (event, options) => {
       const args = [
         '-i', inputPath,
         '-vf', filterString,
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '18',  // High quality
         '-c:a', 'copy',
+        '-metadata:s:v', 'rotate=0',  // Clear rotation metadata after processing
         '-y',
         outputPath
       ];
