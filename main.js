@@ -2602,17 +2602,19 @@ ipcMain.handle('extract-frames', async (event, options) => {
   const firstFramePath = path.join(actualOutputDir, `${basename}_first_${timestamp}.jpg`);
   const lastFramePath = path.join(actualOutputDir, `${basename}_last_${timestamp}.jpg`);
 
-  // Extract first frame
+  // Extract first frame (simply take frame at position 0)
   const extractFirstFrame = () => {
     return new Promise((resolve, reject) => {
       const args = [
+        '-ss', '0',
         '-i', videoPath,
-        '-vf', 'select=eq(n\\,0)',
         '-vframes', '1',
         '-q:v', '2',
         '-y',
         firstFramePath
       ];
+
+      logInfo('EXTRACT_FIRST_FRAME_CMD', 'FFmpeg args', { args: args.join(' ') });
 
       const ffmpeg = spawn(ffmpegPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -2627,8 +2629,8 @@ ipcMain.handle('extract-frames', async (event, options) => {
           logInfo('EXTRACT_FIRST_FRAME_SUCCESS', 'First frame extracted', { firstFramePath });
           resolve(firstFramePath);
         } else {
-          logError('EXTRACT_FIRST_FRAME_FAILED', 'First frame extraction failed', { error: errorOutput });
-          reject(new Error(errorOutput || 'FFmpeg failed'));
+          logError('EXTRACT_FIRST_FRAME_FAILED', 'First frame extraction failed', { code, error: errorOutput.slice(-500) });
+          reject(new Error('첫 프레임 추출 실패'));
         }
       });
 
@@ -2641,8 +2643,8 @@ ipcMain.handle('extract-frames', async (event, options) => {
   // Extract last frame (seek to near end of video)
   const extractLastFrame = () => {
     return new Promise((resolve, reject) => {
-      // Seek to 0.1 seconds before the end to get the last frame
-      const seekTime = Math.max(0, duration - 0.1);
+      // Seek to 0.5 seconds before the end to get the last frame
+      const seekTime = Math.max(0, duration - 0.5);
 
       const args = [
         '-ss', seekTime.toString(),
@@ -2652,6 +2654,8 @@ ipcMain.handle('extract-frames', async (event, options) => {
         '-y',
         lastFramePath
       ];
+
+      logInfo('EXTRACT_LAST_FRAME_CMD', 'FFmpeg args', { seekTime, duration, args: args.join(' ') });
 
       const ffmpeg = spawn(ffmpegPath, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -2666,8 +2670,8 @@ ipcMain.handle('extract-frames', async (event, options) => {
           logInfo('EXTRACT_LAST_FRAME_SUCCESS', 'Last frame extracted', { lastFramePath });
           resolve(lastFramePath);
         } else {
-          logError('EXTRACT_LAST_FRAME_FAILED', 'Last frame extraction failed', { error: errorOutput });
-          reject(new Error(errorOutput || 'FFmpeg failed'));
+          logError('EXTRACT_LAST_FRAME_FAILED', 'Last frame extraction failed', { code, error: errorOutput.slice(-500) });
+          reject(new Error('마지막 프레임 추출 실패'));
         }
       });
 
