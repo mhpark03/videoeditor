@@ -261,6 +261,7 @@ window.executeApplyQuality = function() { return executeApplyQuality(); };
 window.executeExportVideoToS3 = function() { return executeExportVideoToS3(); };
 window.executeExtractFrames = function() { return executeExtractFrames(); };
 window.executeExtractAndAddSubtitles = function() { return executeExtractAndAddSubtitles(); };
+window.executeExtractSubtitlesOnly = function() { return executeExtractSubtitlesOnly(); };
 window.executeAddSubtitlesFromFile = function() { return executeAddSubtitlesFromFile(); };
 window.executeExportAudioToS3 = function() { return executeExportAudioToS3(); };
 window.executeExtractAudioToS3 = function() { return executeExtractAudioToS3(); };
@@ -1182,15 +1183,16 @@ function showToolProperties(tool) {
           </p>
         </div>
 
-        <button class="property-btn" onclick="executeExtractAndAddSubtitles()" style="background: #667eea;">📝 자막 추출 및 추가</button>
+        <button class="property-btn" onclick="executeExtractAndAddSubtitles()" style="background: #667eea;">📝 자막 추출 및 영상에 추가</button>
+        <button class="property-btn" onclick="executeExtractSubtitlesOnly()" style="background: #48bb78; margin-top: 8px;">💾 자막만 추출 (SRT 저장)</button>
 
         <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
-          <label style="color: #888; font-size: 12px;">또는 SRT 파일 직접 선택:</label>
+          <label style="color: #888; font-size: 12px;">기존 SRT 파일 사용:</label>
           <button class="property-btn" onclick="executeAddSubtitlesFromFile()" style="background: #4a5568; margin-top: 8px;">📄 SRT 파일로 자막 추가</button>
         </div>
 
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
-          <small style="color: #aaa;">💡 자막이 영상에 번인(burn-in)되어 저장됩니다</small>
+          <small style="color: #aaa;">💡 "자막 추출 및 영상에 추가"는 자막이 영상에 번인됩니다<br>💡 "자막만 추출"은 SRT 파일만 저장합니다</small>
         </div>
       `;
       break;
@@ -9019,6 +9021,96 @@ async function executeExtractAndAddSubtitles() {
     console.error('[Subtitles] Error:', error);
     handleError('자막 추출/추가', error, '자막 처리에 실패했습니다.');
     updateStatus('❌ 자막 처리 실패');
+  }
+}
+
+// Extract subtitles only and save to file
+async function executeExtractSubtitlesOnly() {
+  console.log('[Subtitles] Extract subtitles only');
+
+  if (!currentVideo) {
+    alert('먼저 영상을 가져와주세요.');
+    return;
+  }
+
+  UIHelpers.disableAllButtons();
+  showProgress();
+  updateProgress(10, '음성 분석 준비 중...');
+  updateStatus('🎤 음성에서 자막 추출 중...');
+
+  try {
+    // Extract subtitles using Whisper API
+    updateProgress(20, 'OpenAI Whisper API로 음성 분석 중...');
+
+    const extractResult = await window.electronAPI.extractSubtitles({
+      videoPath: currentVideo
+    });
+
+    if (!extractResult.success) {
+      throw new Error(extractResult.error || '자막 추출 실패');
+    }
+
+    console.log('[Subtitles] Extraction result:', extractResult);
+    updateProgress(70, `자막 추출 완료 (${extractResult.segments?.length || 0}개 구간)`);
+
+    // Ask user where to save the SRT file
+    const videoFileName = currentVideo.split('\\').pop().split('/').pop();
+    const defaultName = videoFileName.substring(0, videoFileName.lastIndexOf('.')) + '.srt';
+
+    const saveResult = await window.electronAPI.saveFileDialog({
+      title: '자막 파일 저장',
+      defaultPath: defaultName,
+      filters: [{ name: 'SRT Subtitles', extensions: ['srt'] }]
+    });
+
+    if (!saveResult || saveResult.canceled) {
+      // User cancelled, but still show the extracted text
+      hideProgress();
+      UIHelpers.enableAllButtons();
+
+      const previewText = extractResult.text?.substring(0, 500) + (extractResult.text?.length > 500 ? '...' : '');
+      alert(`자막 추출 완료!\n\n추출된 언어: ${extractResult.language || '자동 감지'}\n자막 구간: ${extractResult.segments?.length || 0}개\n\n추출된 텍스트:\n${previewText}\n\n(저장이 취소되었습니다. 임시 파일: ${extractResult.srtPath})`);
+      updateStatus('✅ 자막 추출 완료 (저장 취소됨)');
+      return;
+    }
+
+    // Copy temp SRT file to user's chosen location
+    updateProgress(90, 'SRT 파일 저장 중...');
+
+    const copyResult = await window.electronAPI.copyFile({
+      sourcePath: extractResult.srtPath,
+      destPath: saveResult.filePath
+    });
+
+    if (!copyResult.success) {
+      throw new Error(copyResult.error || 'SRT 파일 저장 실패');
+    }
+
+    updateProgress(100, '저장 완료!');
+    hideProgress();
+    UIHelpers.enableAllButtons();
+
+    const savedFileName = saveResult.filePath.split('\\').pop().split('/').pop();
+    const previewText = extractResult.text?.substring(0, 300) + (extractResult.text?.length > 300 ? '...' : '');
+
+    alert(`자막 파일 저장 완료!\n\n파일: ${savedFileName}\n추출된 언어: ${extractResult.language || '자동 감지'}\n자막 구간: ${extractResult.segments?.length || 0}개\n\n추출된 텍스트:\n${previewText}`);
+    updateStatus(`✅ 자막 저장 완료: ${savedFileName}`);
+
+    // Open the folder containing the saved file
+    try {
+      const folderPath = saveResult.filePath.substring(0, saveResult.filePath.lastIndexOf('\\')) ||
+                         saveResult.filePath.substring(0, saveResult.filePath.lastIndexOf('/'));
+      await window.electronAPI.openPath(folderPath);
+    } catch (e) {
+      console.log('[Subtitles] Could not open folder:', e);
+    }
+
+  } catch (error) {
+    hideProgress();
+    UIHelpers.enableAllButtons();
+    console.error('[Subtitles] Error:', error);
+    handleError('자막 추출', error, '자막 추출에 실패했습니다.');
+    updateStatus('❌ 자막 추출 실패');
   }
 }
 
