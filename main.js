@@ -2321,18 +2321,26 @@ function escapeLineForFFmpeg(text) {
 
 // Helper function to build multi-line drawtext filter
 function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX, baseY, enableClause) {
-  // Split text by newlines
-  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+  // Split text by newlines - keep empty lines for spacing
+  const allLines = text.split(/\r?\n/);
 
-  if (lines.length === 0) {
+  // Check if all lines are empty
+  if (allLines.every(line => line.trim() === '')) {
     return '';
   }
 
-  const lineHeight = Math.round(fontSize * 1.4); // Line height = font size * 1.4
-  const totalHeight = lines.length * lineHeight;
+  // Line height = font size * 2.0 for good readability
+  const lineHeight = Math.round(fontSize * 2.0);
+  const totalHeight = allLines.length * lineHeight;
 
-  // Build filter for each line
-  const filters = lines.map((line, index) => {
+  // Build filter for each line (skip empty lines but count them for positioning)
+  const filters = [];
+  allLines.forEach((line, index) => {
+    // Skip empty lines (they just add vertical space)
+    if (line.trim() === '') {
+      return;
+    }
+
     const escapedLine = escapeLineForFFmpeg(line);
 
     // Calculate y position for each line
@@ -2340,12 +2348,11 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
 
     if (baseY.includes('h-text_h') || baseY.includes('(h-')) {
       // Center vertically
-      // Calculate: (screen_height - total_text_height) / 2 + (line_index * line_height)
       const lineOffset = index * lineHeight;
       yPos = `max(10\\,min(h-${fontSize}-10\\,(h-${totalHeight})/2+${lineOffset}))`;
     } else if (baseY.includes('h-') || baseY === 'bottom') {
       // Bottom position - start from bottom, go up
-      const bottomOffset = (lines.length - 1 - index) * lineHeight + 30;
+      const bottomOffset = (allLines.length - 1 - index) * lineHeight + 40;
       yPos = `max(10\\,h-${bottomOffset}-${fontSize})`;
     } else {
       // Fixed position or top
@@ -2369,7 +2376,7 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
       filter += `:enable='${enableClause}'`;
     }
 
-    return filter;
+    filters.push(filter);
   });
 
   return filters.join(',');
