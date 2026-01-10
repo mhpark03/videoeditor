@@ -2305,19 +2305,62 @@ ipcMain.handle('merge-audios', async (event, options) => {
 });
 
 // Add text/subtitle overlay
-// Helper function to escape text for FFmpeg drawtext filter
-function escapeTextForFFmpeg(text) {
+// Helper function to escape a single line of text for FFmpeg drawtext filter
+function escapeLineForFFmpeg(text) {
   if (!text) return '';
   return text
-    .replace(/\\/g, '\\\\')           // Escape backslashes first
+    .replace(/\\/g, '\\\\\\\\')        // Escape backslashes (need 4 for FFmpeg)
     .replace(/'/g, "'\\''")            // Escape single quotes
     .replace(/:/g, '\\:')              // Escape colons
     .replace(/\[/g, '\\[')             // Escape brackets
     .replace(/\]/g, '\\]')
-    .replace(/\n/g, ' ')               // Replace newlines with spaces
     .replace(/\r/g, '')                // Remove carriage returns
     .replace(/;/g, '\\;')              // Escape semicolons
     .replace(/,/g, '\\,');             // Escape commas
+}
+
+// Helper function to build multi-line drawtext filter
+function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX, baseY, enableClause) {
+  // Split text by newlines
+  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+
+  if (lines.length === 0) {
+    return '';
+  }
+
+  const lineHeight = Math.round(fontSize * 1.3); // Line height = font size * 1.3
+  const totalHeight = lines.length * lineHeight;
+
+  // Build filter for each line
+  const filters = lines.map((line, index) => {
+    const escapedLine = escapeLineForFFmpeg(line);
+
+    // Calculate y position for each line
+    // If baseY is a formula like (h-text_h)/2, we need to adjust for multi-line
+    let yPos;
+    if (baseY.includes('h-text_h') || baseY.includes('(h-')) {
+      // Center vertically - adjust for total height of all lines
+      const offsetFromCenter = (index - (lines.length - 1) / 2) * lineHeight;
+      yPos = `(h-${totalHeight})/2+${Math.round(offsetFromCenter + lineHeight / 2)}`;
+    } else if (baseY.includes('h-')) {
+      // Bottom position
+      yPos = `h-${totalHeight - index * lineHeight}-20`;
+    } else {
+      // Fixed position or top
+      const baseYNum = parseInt(baseY) || 50;
+      yPos = baseYNum + index * lineHeight;
+    }
+
+    let filter = `drawtext=text='${escapedLine}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${baseX}:y=${yPos}`;
+
+    if (enableClause) {
+      filter += `:enable='${enableClause}'`;
+    }
+
+    return filter;
+  });
+
+  return filters.join(',');
 }
 
 ipcMain.handle('add-text', async (event, options) => {
@@ -2332,10 +2375,7 @@ ipcMain.handle('add-text', async (event, options) => {
     outputPath = path.join(tempDir, `${fileName}_text_${timestamp}.mp4`);
   }
 
-  // Escape text for FFmpeg filter
-  const escapedText = escapeTextForFFmpeg(text);
-
-  logInfo('ADD_TEXT_START', 'Adding text overlay', { originalText: text, escapedText, fontSize, outputPath });
+  logInfo('ADD_TEXT_START', 'Adding text overlay', { text, fontSize, outputPath });
 
   return new Promise(async (resolve, reject) => {
     try {
@@ -2400,7 +2440,7 @@ ipcMain.handle('add-text', async (event, options) => {
 
           // Step 2: Extract segment with text and apply text overlay (encode)
           await new Promise((res, rej) => {
-            const filterString = `drawtext=text='${escapedText}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
+            const filterString = buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, x, y, null);
             const args2 = [
               '-i', inputPath,
               '-ss', startTime.toString(),
@@ -2499,11 +2539,13 @@ ipcMain.handle('add-text', async (event, options) => {
       // Fallback to standard approach (process entire video)
       logInfo('ADD_TEXT_STANDARD', 'Using standard full-video approach');
 
-      let filterString = `drawtext=text='${escapedText}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${x}:y=${y}`;
-
+      // Build enable clause if time range specified
+      let enableClause = null;
       if (startTime !== undefined && duration !== undefined) {
-        filterString += `:enable='between(t,${startTime},${startTime + duration})'`;
+        enableClause = `between(t,${startTime},${startTime + duration})`;
       }
+
+      const filterString = buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, x, y, enableClause);
 
       const args = [
         '-i', inputPath,
