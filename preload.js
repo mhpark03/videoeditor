@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   addText: (options) => ipcRenderer.invoke('add-text', options),
   extractAudio: (options) => ipcRenderer.invoke('extract-audio', options),
   extractFrames: (options) => ipcRenderer.invoke('extract-frames', options),
+  extractSubtitles: (options) => ipcRenderer.invoke('extract-subtitles', options),
+  addSubtitles: (options) => ipcRenderer.invoke('add-subtitles', options),
   generateSilenceFile: (options) => ipcRenderer.invoke('generate-silence-file', options),
   copyAudioFile: (options) => ipcRenderer.invoke('copy-audio-file', options),
   deleteTempFile: (filePath) => ipcRenderer.invoke('delete-temp-file', filePath),

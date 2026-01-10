@@ -260,6 +260,8 @@ window.executeAudioSpeed = function() { return executeAudioSpeed(); };
 window.executeApplyQuality = function() { return executeApplyQuality(); };
 window.executeExportVideoToS3 = function() { return executeExportVideoToS3(); };
 window.executeExtractFrames = function() { return executeExtractFrames(); };
+window.executeExtractAndAddSubtitles = function() { return executeExtractAndAddSubtitles(); };
+window.executeAddSubtitlesFromFile = function() { return executeAddSubtitlesFromFile(); };
 window.executeExportAudioToS3 = function() { return executeExportAudioToS3(); };
 window.executeExtractAudioToS3 = function() { return executeExtractAudioToS3(); };
 
@@ -1129,6 +1131,66 @@ function showToolProperties(tool) {
         <button class="property-btn" onclick="executeExtractFrames()">🖼️ 프레임 추출</button>
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
           <small style="color: #aaa;">💡 저장 위치를 선택하면 첫 프레임과 마지막 프레임이 각각 저장됩니다</small>
+        </div>
+      `;
+      break;
+
+    case 'subtitle':
+      if (!currentVideo) {
+        alert('먼저 영상을 가져와주세요.');
+        return;
+      }
+
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>현재 영상</label>
+          <div style="background: #2d2d2d; padding: 15px; border-radius: 5px; margin-top: 10px;">
+            <div style="color: #e0e0e0; font-size: 14px;">📄 ${currentVideo.split('\\').pop().split('/').pop()}</div>
+            <div style="color: #888; font-size: 12px; margin-top: 5px;">
+              ${videoInfo ? `길이: ${formatTime(parseFloat(videoInfo.format.duration))}` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="property-group">
+          <label>자막 스타일</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <div>
+              <label style="font-size: 12px; color: #888;">글자 크기</label>
+              <select id="subtitle-font-size" style="width: 100%; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px;">
+                <option value="18">작게 (18)</option>
+                <option value="24" selected>보통 (24)</option>
+                <option value="32">크게 (32)</option>
+                <option value="40">매우 크게 (40)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px; color: #888;">위치</label>
+              <select id="subtitle-position" style="width: 100%; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px;">
+                <option value="bottom" selected>하단</option>
+                <option value="middle">중앙</option>
+                <option value="top">상단</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="property-group">
+          <p style="color: #aaa; font-size: 13px; margin: 10px 0;">
+            OpenAI Whisper API를 사용하여 음성에서 자막을 추출합니다.<br>
+            <small style="color: #666;">※ .env 파일에 OPENAI_API_KEY 설정 필요</small>
+          </p>
+        </div>
+
+        <button class="property-btn" onclick="executeExtractAndAddSubtitles()" style="background: #667eea;">📝 자막 추출 및 추가</button>
+
+        <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 15px;">
+          <label style="color: #888; font-size: 12px;">또는 SRT 파일 직접 선택:</label>
+          <button class="property-btn" onclick="executeAddSubtitlesFromFile()" style="background: #4a5568; margin-top: 8px;">📄 SRT 파일로 자막 추가</button>
+        </div>
+
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
+          <small style="color: #aaa;">💡 자막이 영상에 번인(burn-in)되어 저장됩니다</small>
         </div>
       `;
       break;
@@ -8882,6 +8944,150 @@ async function executeExtractFrames() {
   }
 }
 
+// Extract subtitles from video and add them
+async function executeExtractAndAddSubtitles() {
+  console.log('[Subtitles] Extract and add subtitles');
+
+  if (!currentVideo) {
+    alert('먼저 영상을 가져와주세요.');
+    return;
+  }
+
+  // Get subtitle style options
+  const fontSizeSelect = document.getElementById('subtitle-font-size');
+  const positionSelect = document.getElementById('subtitle-position');
+
+  const fontStyle = {
+    fontSize: fontSizeSelect ? parseInt(fontSizeSelect.value) : 24,
+    position: positionSelect ? positionSelect.value : 'bottom',
+    fontColor: 'white',
+    outlineColor: 'black',
+    outlineWidth: 2
+  };
+
+  UIHelpers.disableAllButtons();
+  showProgress();
+  updateProgress(10, '음성 분석 준비 중...');
+  updateStatus('🎤 음성에서 자막 추출 중...');
+
+  try {
+    // Step 1: Extract subtitles using Whisper API
+    updateProgress(20, 'OpenAI Whisper API로 음성 분석 중...');
+
+    const extractResult = await window.electronAPI.extractSubtitles({
+      videoPath: currentVideo
+    });
+
+    if (!extractResult.success) {
+      throw new Error(extractResult.error || '자막 추출 실패');
+    }
+
+    console.log('[Subtitles] Extraction result:', extractResult);
+    updateProgress(50, `자막 추출 완료 (${extractResult.segments?.length || 0}개 구간)`);
+
+    // Show extracted text preview
+    const previewText = extractResult.text?.substring(0, 200) + (extractResult.text?.length > 200 ? '...' : '');
+    updateStatus(`📝 추출된 텍스트: ${previewText}`);
+
+    // Step 2: Add subtitles to video
+    updateProgress(60, '영상에 자막 추가 중...');
+
+    const addResult = await window.electronAPI.addSubtitles({
+      videoPath: currentVideo,
+      srtPath: extractResult.srtPath,
+      fontStyle: fontStyle
+    });
+
+    if (!addResult.success) {
+      throw new Error(addResult.error || '자막 추가 실패');
+    }
+
+    updateProgress(100, '자막 추가 완료!');
+    hideProgress();
+    UIHelpers.enableAllButtons();
+
+    alert(`자막 추가 완료!\n\n추출된 언어: ${extractResult.language || '자동 감지'}\n자막 구간: ${extractResult.segments?.length || 0}개\n\n편집된 내용은 임시 저장되었습니다.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.`);
+
+    // Load the subtitled video
+    await loadVideo(addResult.outputPath);
+    currentVideo = addResult.outputPath;
+    updateStatus('✅ 자막 추가 완료');
+
+  } catch (error) {
+    hideProgress();
+    UIHelpers.enableAllButtons();
+    console.error('[Subtitles] Error:', error);
+    handleError('자막 추출/추가', error, '자막 처리에 실패했습니다.');
+    updateStatus('❌ 자막 처리 실패');
+  }
+}
+
+// Add subtitles from existing SRT file
+async function executeAddSubtitlesFromFile() {
+  console.log('[Subtitles] Add subtitles from file');
+
+  if (!currentVideo) {
+    alert('먼저 영상을 가져와주세요.');
+    return;
+  }
+
+  try {
+    // Select SRT file
+    const srtPath = await window.electronAPI.selectMedia('srt');
+    if (!srtPath) {
+      console.log('[Subtitles] No SRT file selected');
+      return;
+    }
+
+    // Get subtitle style options
+    const fontSizeSelect = document.getElementById('subtitle-font-size');
+    const positionSelect = document.getElementById('subtitle-position');
+
+    const fontStyle = {
+      fontSize: fontSizeSelect ? parseInt(fontSizeSelect.value) : 24,
+      position: positionSelect ? positionSelect.value : 'bottom',
+      fontColor: 'white',
+      outlineColor: 'black',
+      outlineWidth: 2
+    };
+
+    UIHelpers.disableAllButtons();
+    showProgress();
+    updateProgress(30, 'SRT 파일 로드 중...');
+    updateStatus('📄 SRT 파일로 자막 추가 중...');
+
+    updateProgress(50, '영상에 자막 추가 중...');
+
+    const addResult = await window.electronAPI.addSubtitles({
+      videoPath: currentVideo,
+      srtPath: srtPath,
+      fontStyle: fontStyle
+    });
+
+    if (!addResult.success) {
+      throw new Error(addResult.error || '자막 추가 실패');
+    }
+
+    updateProgress(100, '자막 추가 완료!');
+    hideProgress();
+    UIHelpers.enableAllButtons();
+
+    alert(`자막 추가 완료!\n\n편집된 내용은 임시 저장되었습니다.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.`);
+
+    // Load the subtitled video
+    await loadVideo(addResult.outputPath);
+    currentVideo = addResult.outputPath;
+    updateStatus('✅ 자막 추가 완료');
+
+  } catch (error) {
+    hideProgress();
+    UIHelpers.enableAllButtons();
+    console.error('[Subtitles] Error:', error);
+    handleError('자막 추가', error, '자막 추가에 실패했습니다.');
+    updateStatus('❌ 자막 추가 실패');
+  }
+}
+
 // Audio trim helper functions
 function setAudioStartFromSlider() {
   if (!audioFileInfo) {
@@ -9461,6 +9667,10 @@ function updateModeUI() {
         <button class="tool-btn" data-tool="extract-frames">
           <span class="icon">🖼️</span>
           첫/끝 프레임 추출
+        </button>
+        <button class="tool-btn" data-tool="subtitle">
+          <span class="icon">📝</span>
+          자막 추출/추가
         </button>
       </div>
     `;

@@ -431,6 +431,11 @@ ipcMain.handle('select-media', async (event, mediaType) => {
         { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg'] }
       ];
       break;
+    case 'srt':
+      filters = [
+        { name: 'Subtitles', extensions: ['srt', 'vtt', 'ass', 'ssa'] }
+      ];
+      break;
     default:
       filters = [
         { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'mp4', 'avi', 'mov', 'mkv', 'webm', 'mp3', 'wav', 'aac', 'm4a', 'ogg'] }
@@ -2704,6 +2709,228 @@ ipcMain.handle('extract-frames', async (event, options) => {
     logError('EXTRACT_FRAMES_FAILED', 'Frame extraction failed', { error: error.message });
     throw error;
   }
+});
+
+// Extract subtitles from video using OpenAI Whisper API
+ipcMain.handle('extract-subtitles', async (event, options) => {
+  const { videoPath } = options;
+
+  logInfo('EXTRACT_SUBTITLES_START', 'Starting subtitle extraction', { videoPath });
+
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API 키가 설정되지 않았습니다. .env 파일에 OPENAI_API_KEY를 설정해주세요.');
+  }
+
+  // First, extract audio from video as MP3
+  const tempAudioPath = path.join(os.tmpdir(), `subtitle_audio_${Date.now()}.mp3`);
+
+  const extractAudioPromise = () => {
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-i', videoPath,
+        '-vn',
+        '-acodec', 'mp3',
+        '-ab', '128k',
+        '-ar', '16000',
+        '-ac', '1',
+        '-y',
+        tempAudioPath
+      ];
+
+      logInfo('EXTRACT_AUDIO_FOR_STT', 'Extracting audio for STT', { tempAudioPath });
+
+      const ffmpeg = spawn(ffmpegPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', (data) => { errorOutput += data.toString('utf8'); });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          resolve(tempAudioPath);
+        } else {
+          reject(new Error('오디오 추출 실패: ' + errorOutput.slice(-200)));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        reject(new Error(`FFmpeg 오류: ${err.message}`));
+      });
+    });
+  };
+
+  try {
+    await extractAudioPromise();
+
+    // Check file size (Whisper API limit is 25MB)
+    const fs = require('fs');
+    const stats = fs.statSync(tempAudioPath);
+    const fileSizeMB = stats.size / (1024 * 1024);
+    logInfo('AUDIO_FILE_SIZE', 'Audio file size', { fileSizeMB: fileSizeMB.toFixed(2) });
+
+    if (fileSizeMB > 25) {
+      fs.unlinkSync(tempAudioPath);
+      throw new Error('오디오 파일이 25MB를 초과합니다. 더 짧은 영상을 사용해주세요.');
+    }
+
+    // Send to OpenAI Whisper API
+    logInfo('WHISPER_API_CALL', 'Calling Whisper API', {});
+
+    const FormData = require('form-data');
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(tempAudioPath));
+    formData.append('model', 'whisper-1');
+    formData.append('response_format', 'verbose_json');
+    formData.append('timestamp_granularities[]', 'segment');
+
+    const axios = require('axios');
+    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+      headers: {
+        'Authorization': `Bearer ${openaiApiKey}`,
+        ...formData.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    });
+
+    // Clean up temp audio file
+    fs.unlinkSync(tempAudioPath);
+
+    const transcription = response.data;
+    logInfo('WHISPER_API_SUCCESS', 'Transcription received', {
+      text: transcription.text?.substring(0, 100),
+      segmentCount: transcription.segments?.length
+    });
+
+    // Generate SRT content from segments
+    let srtContent = '';
+    if (transcription.segments && transcription.segments.length > 0) {
+      transcription.segments.forEach((segment, index) => {
+        const startTime = formatSrtTime(segment.start);
+        const endTime = formatSrtTime(segment.end);
+        srtContent += `${index + 1}\n`;
+        srtContent += `${startTime} --> ${endTime}\n`;
+        srtContent += `${segment.text.trim()}\n\n`;
+      });
+    }
+
+    // Save SRT file
+    const videoBasename = path.basename(videoPath, path.extname(videoPath));
+    const srtPath = path.join(os.tmpdir(), `${videoBasename}_${Date.now()}.srt`);
+    fs.writeFileSync(srtPath, srtContent, 'utf8');
+
+    logInfo('EXTRACT_SUBTITLES_SUCCESS', 'Subtitles extracted', { srtPath, segmentCount: transcription.segments?.length });
+
+    return {
+      success: true,
+      srtPath,
+      text: transcription.text,
+      segments: transcription.segments,
+      language: transcription.language
+    };
+
+  } catch (error) {
+    logError('EXTRACT_SUBTITLES_FAILED', 'Subtitle extraction failed', { error: error.message });
+    // Clean up temp file if exists
+    try {
+      const fs = require('fs');
+      if (fs.existsSync(tempAudioPath)) {
+        fs.unlinkSync(tempAudioPath);
+      }
+    } catch (e) {}
+    throw error;
+  }
+});
+
+// Helper function to format time for SRT format (HH:MM:SS,mmm)
+function formatSrtTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.round((seconds % 1) * 1000);
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+}
+
+// Add subtitles to video (burn-in)
+ipcMain.handle('add-subtitles', async (event, options) => {
+  let { videoPath, srtPath, outputPath, fontStyle } = options;
+
+  logInfo('ADD_SUBTITLES_START', 'Adding subtitles to video', { videoPath, srtPath, fontStyle });
+
+  // If outputPath is null, create temp file
+  if (!outputPath) {
+    const timestamp = Date.now();
+    const fileName = path.basename(videoPath, path.extname(videoPath));
+    outputPath = path.join(os.tmpdir(), `${fileName}_subtitled_${timestamp}.mp4`);
+  }
+
+  // Default font style
+  const style = fontStyle || {
+    fontSize: 24,
+    fontColor: 'white',
+    outlineColor: 'black',
+    outlineWidth: 2,
+    position: 'bottom'  // bottom, middle, top
+  };
+
+  // Build subtitle filter
+  // Need to escape special characters in path for FFmpeg filter
+  const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+
+  // Position mapping
+  const positionMap = {
+    'top': 10,
+    'middle': '(h-text_h)/2',
+    'bottom': 'h-th-20'
+  };
+
+  const marginV = style.position === 'top' ? 10 : (style.position === 'middle' ? 0 : 20);
+
+  // Build force_style string
+  const forceStyle = `FontSize=${style.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=${style.outlineWidth},MarginV=${marginV}`;
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', videoPath,
+      '-vf', `subtitles='${escapedSrtPath}':force_style='${forceStyle}'`,
+      '-c:a', 'copy',
+      '-y',
+      outputPath
+    ];
+
+    logInfo('ADD_SUBTITLES_CMD', 'FFmpeg command', { args: args.join(' ') });
+
+    const ffmpeg = spawn(ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      const message = data.toString('utf8');
+      errorOutput += message;
+      mainWindow.webContents.send('ffmpeg-progress', message);
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        logInfo('ADD_SUBTITLES_SUCCESS', 'Subtitles added successfully', { outputPath });
+        resolve({ success: true, outputPath });
+      } else {
+        logError('ADD_SUBTITLES_FAILED', 'Failed to add subtitles', { code, error: errorOutput.slice(-500) });
+        reject(new Error('자막 추가 실패'));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      logError('ADD_SUBTITLES_ERROR', 'FFmpeg spawn error', { error: err.message });
+      reject(new Error(`FFmpeg 오류: ${err.message}`));
+    });
+  });
 });
 
 // Adjust audio speed
