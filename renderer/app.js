@@ -259,6 +259,7 @@ window.executeSpeed = function() { return executeSpeed(); };
 window.executeAudioSpeed = function() { return executeAudioSpeed(); };
 window.executeApplyQuality = function() { return executeApplyQuality(); };
 window.executeExportVideoToS3 = function() { return executeExportVideoToS3(); };
+window.executeExtractFrames = function() { return executeExtractFrames(); };
 window.executeExportAudioToS3 = function() { return executeExportAudioToS3(); };
 window.executeExtractAudioToS3 = function() { return executeExtractAudioToS3(); };
 
@@ -1100,6 +1101,34 @@ function showToolProperties(tool) {
         <button class="property-btn" onclick="executeExportVideoToS3()">💾 PC에 저장</button>
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
           <small style="color: #aaa;">💡 편집된 영상을 PC에 저장합니다</small>
+        </div>
+      `;
+      break;
+
+    case 'extract-frames':
+      if (!currentVideo) {
+        alert('먼저 영상을 가져와주세요.');
+        return;
+      }
+
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>현재 영상</label>
+          <div style="background: #2d2d2d; padding: 15px; border-radius: 5px; margin-top: 10px;">
+            <div style="color: #e0e0e0; font-size: 14px;">📄 ${currentVideo.split('\\').pop().split('/').pop()}</div>
+            <div style="color: #888; font-size: 12px; margin-top: 5px;">
+              ${videoInfo ? `길이: ${formatTime(parseFloat(videoInfo.format.duration))}` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="property-group">
+          <p style="color: #aaa; font-size: 13px; margin: 10px 0;">
+            영상의 첫 프레임과 마지막 프레임을 JPG 이미지로 추출합니다.
+          </p>
+        </div>
+        <button class="property-btn" onclick="executeExtractFrames()">🖼️ 프레임 추출</button>
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
+          <small style="color: #aaa;">💡 저장 위치를 선택하면 첫 프레임과 마지막 프레임이 각각 저장됩니다</small>
         </div>
       `;
       break;
@@ -8762,6 +8791,97 @@ async function executeExportVideoToS3() {
   }
 }
 
+// Extract first and last frames as images
+async function executeExtractFrames() {
+  console.log('[Extract Frames] Function called');
+
+  if (!currentVideo) {
+    alert('먼저 영상을 가져와주세요.');
+    return;
+  }
+
+  UIHelpers.disableAllButtons();
+  showProgress();
+  updateProgress(10, '저장 위치 선택 중...');
+  updateStatus('🖼️ 프레임 추출 준비 중...');
+
+  try {
+    // Get video filename for default naming
+    const originalFileName = currentVideo.split('\\').pop().split('/').pop();
+    const fileNameWithoutExt = originalFileName.substring(0, originalFileName.lastIndexOf('.')) || originalFileName;
+
+    // Show folder select dialog
+    const result = await window.electronAPI.saveFileDialog({
+      title: '프레임 저장 위치 선택',
+      defaultPath: `${fileNameWithoutExt}_frames`,
+      filters: [{ name: 'Folders', extensions: ['*'] }],
+      properties: ['openDirectory', 'createDirectory']
+    });
+
+    // If user cancels folder selection, use file dialog instead
+    let outputDir;
+    if (!result || result.canceled) {
+      // Try to get directory from a file save dialog
+      const fileResult = await window.electronAPI.saveFileDialog({
+        title: '첫 프레임 저장',
+        defaultPath: `${fileNameWithoutExt}_first.jpg`,
+        filters: [{ name: 'JPEG Images', extensions: ['jpg'] }]
+      });
+
+      if (!fileResult || fileResult.canceled) {
+        console.log('[Extract Frames] Cancelled by user');
+        hideProgress();
+        UIHelpers.enableAllButtons();
+        updateStatus('프레임 추출 취소됨');
+        return;
+      }
+
+      // Get directory from selected file path
+      outputDir = fileResult.filePath.substring(0, fileResult.filePath.lastIndexOf('\\')) ||
+                  fileResult.filePath.substring(0, fileResult.filePath.lastIndexOf('/'));
+    } else {
+      outputDir = result.filePath;
+    }
+
+    updateProgress(30, '프레임 추출 중...');
+    updateStatus('🔄 첫 프레임과 마지막 프레임 추출 중...');
+
+    // Extract frames
+    const extractResult = await window.electronAPI.extractFrames({
+      videoPath: currentVideo,
+      outputDir: outputDir
+    });
+
+    if (!extractResult.success) {
+      throw new Error(extractResult.error || '프레임 추출 실패');
+    }
+
+    updateProgress(100, '추출 완료!');
+    hideProgress();
+    UIHelpers.enableAllButtons();
+
+    const firstFileName = extractResult.firstFramePath.split('\\').pop().split('/').pop();
+    const lastFileName = extractResult.lastFramePath.split('\\').pop().split('/').pop();
+
+    alert(`프레임 추출 완료!\n\n첫 프레임: ${firstFileName}\n마지막 프레임: ${lastFileName}\n\n저장 위치: ${outputDir}`);
+    updateStatus(`✅ 프레임 추출 완료: ${firstFileName}, ${lastFileName}`);
+
+    // Open the output folder
+    try {
+      await window.electronAPI.openPath(outputDir);
+    } catch (e) {
+      console.log('[Extract Frames] Could not open folder:', e);
+    }
+
+  } catch (error) {
+    hideProgress();
+    UIHelpers.enableAllButtons();
+    console.error('[Extract Frames] Error:', error);
+    handleError('프레임 추출', error, '프레임 추출에 실패했습니다.');
+    updateStatus('❌ 프레임 추출 실패');
+  }
+}
+
 // Audio trim helper functions
 function setAudioStartFromSlider() {
   if (!audioFileInfo) {
@@ -9337,6 +9457,10 @@ function updateModeUI() {
         <button class="tool-btn export-btn" data-tool="export">
           <span class="icon">💾</span>
           비디오 내보내기
+        </button>
+        <button class="tool-btn" data-tool="extract-frames">
+          <span class="icon">🖼️</span>
+          첫/끝 프레임 추출
         </button>
       </div>
     `;

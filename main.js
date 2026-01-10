@@ -2571,6 +2571,129 @@ ipcMain.handle('extract-audio', async (event, options) => {
   });
 });
 
+// Extract first and last frames as images
+ipcMain.handle('extract-frames', async (event, options) => {
+  const { videoPath, outputDir } = options;
+
+  logInfo('EXTRACT_FRAMES_START', 'Extracting first and last frames', { videoPath, outputDir });
+
+  // Get video duration first
+  const getVideoDuration = () => {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffprobePath, [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        videoPath
+      ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+      let output = '';
+      ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
+      ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
+    });
+  };
+
+  const duration = await getVideoDuration();
+  const basename = path.basename(videoPath, path.extname(videoPath));
+  const timestamp = Date.now();
+
+  // Use outputDir if provided, otherwise use temp directory
+  const actualOutputDir = outputDir || os.tmpdir();
+  const firstFramePath = path.join(actualOutputDir, `${basename}_first_${timestamp}.jpg`);
+  const lastFramePath = path.join(actualOutputDir, `${basename}_last_${timestamp}.jpg`);
+
+  // Extract first frame
+  const extractFirstFrame = () => {
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-i', videoPath,
+        '-vf', 'select=eq(n\\,0)',
+        '-vframes', '1',
+        '-q:v', '2',
+        '-y',
+        firstFramePath
+      ];
+
+      const ffmpeg = spawn(ffmpegPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', (data) => { errorOutput += data.toString('utf8'); });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          logInfo('EXTRACT_FIRST_FRAME_SUCCESS', 'First frame extracted', { firstFramePath });
+          resolve(firstFramePath);
+        } else {
+          logError('EXTRACT_FIRST_FRAME_FAILED', 'First frame extraction failed', { error: errorOutput });
+          reject(new Error(errorOutput || 'FFmpeg failed'));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        reject(new Error(`FFmpeg error: ${err.message}`));
+      });
+    });
+  };
+
+  // Extract last frame (seek to near end of video)
+  const extractLastFrame = () => {
+    return new Promise((resolve, reject) => {
+      // Seek to 0.1 seconds before the end to get the last frame
+      const seekTime = Math.max(0, duration - 0.1);
+
+      const args = [
+        '-ss', seekTime.toString(),
+        '-i', videoPath,
+        '-vframes', '1',
+        '-q:v', '2',
+        '-y',
+        lastFramePath
+      ];
+
+      const ffmpeg = spawn(ffmpegPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+      ffmpeg.stderr.on('data', (data) => { errorOutput += data.toString('utf8'); });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          logInfo('EXTRACT_LAST_FRAME_SUCCESS', 'Last frame extracted', { lastFramePath });
+          resolve(lastFramePath);
+        } else {
+          logError('EXTRACT_LAST_FRAME_FAILED', 'Last frame extraction failed', { error: errorOutput });
+          reject(new Error(errorOutput || 'FFmpeg failed'));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        reject(new Error(`FFmpeg error: ${err.message}`));
+      });
+    });
+  };
+
+  try {
+    await extractFirstFrame();
+    await extractLastFrame();
+
+    logInfo('EXTRACT_FRAMES_SUCCESS', 'Both frames extracted', { firstFramePath, lastFramePath });
+    return {
+      success: true,
+      firstFramePath,
+      lastFramePath,
+      duration
+    };
+  } catch (error) {
+    logError('EXTRACT_FRAMES_FAILED', 'Frame extraction failed', { error: error.message });
+    throw error;
+  }
+});
+
 // Adjust audio speed
 ipcMain.handle('adjust-audio-speed', async (event, options) => {
   let { inputPath, outputPath, speed } = options;
