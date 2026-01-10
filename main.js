@@ -2594,8 +2594,6 @@ ipcMain.handle('extract-frames', async (event, options) => {
   };
 
   const duration = await getVideoDuration();
-  const basename = path.basename(videoPath, path.extname(videoPath));
-  const timestamp = Date.now();
 
   // Use outputDir if provided, otherwise use temp directory
   const actualOutputDir = outputDir || os.tmpdir();
@@ -2607,8 +2605,10 @@ ipcMain.handle('extract-frames', async (event, options) => {
     logInfo('EXTRACT_FRAMES_DIR_CREATED', 'Output directory created', { actualOutputDir });
   }
 
-  const firstFramePath = path.join(actualOutputDir, `${basename}_first_${timestamp}.jpg`);
-  const lastFramePath = path.join(actualOutputDir, `${basename}_last_${timestamp}.jpg`);
+  // Use folder name as base filename (simple naming: foldername_first.jpg, foldername_last.jpg)
+  const folderName = path.basename(actualOutputDir);
+  const firstFramePath = path.join(actualOutputDir, `${folderName}_first.jpg`);
+  const lastFramePath = path.join(actualOutputDir, `${folderName}_last.jpg`);
 
   // Extract first frame (simply take frame at position 0)
   const extractFirstFrame = () => {
