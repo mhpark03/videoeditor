@@ -3751,7 +3751,6 @@ function updateTextOverlay(currentTime) {
   const innerSpan = textOverlay.querySelector('span');
   if (innerSpan) {
     innerSpan.style.textAlign = alignValue;
-    innerSpan.style.width = '100%';  // Full width so text-align works
   }
 
   // Map text-align to justify-content for flex layout (horizontal)
