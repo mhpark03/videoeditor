@@ -2328,7 +2328,7 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
     return '';
   }
 
-  const lineHeight = Math.round(fontSize * 1.3); // Line height = font size * 1.3
+  const lineHeight = Math.round(fontSize * 1.4); // Line height = font size * 1.4
   const totalHeight = lines.length * lineHeight;
 
   // Build filter for each line
@@ -2336,22 +2336,34 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
     const escapedLine = escapeLineForFFmpeg(line);
 
     // Calculate y position for each line
-    // If baseY is a formula like (h-text_h)/2, we need to adjust for multi-line
     let yPos;
+
     if (baseY.includes('h-text_h') || baseY.includes('(h-')) {
-      // Center vertically - adjust for total height of all lines
-      const offsetFromCenter = (index - (lines.length - 1) / 2) * lineHeight;
-      yPos = `(h-${totalHeight})/2+${Math.round(offsetFromCenter + lineHeight / 2)}`;
-    } else if (baseY.includes('h-')) {
-      // Bottom position
-      yPos = `h-${totalHeight - index * lineHeight}-20`;
+      // Center vertically
+      // Calculate: (screen_height - total_text_height) / 2 + (line_index * line_height)
+      const lineOffset = index * lineHeight;
+      yPos = `max(10\\,min(h-${fontSize}-10\\,(h-${totalHeight})/2+${lineOffset}))`;
+    } else if (baseY.includes('h-') || baseY === 'bottom') {
+      // Bottom position - start from bottom, go up
+      const bottomOffset = (lines.length - 1 - index) * lineHeight + 30;
+      yPos = `max(10\\,h-${bottomOffset}-${fontSize})`;
     } else {
       // Fixed position or top
-      const baseYNum = parseInt(baseY) || 50;
-      yPos = baseYNum + index * lineHeight;
+      const baseYNum = parseInt(baseY) || 30;
+      const lineOffset = index * lineHeight;
+      yPos = `max(10\\,min(h-${fontSize}-10\\,${baseYNum + lineOffset}))`;
     }
 
-    let filter = `drawtext=text='${escapedLine}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${baseX}:y=${yPos}`;
+    // x position with bounds check
+    let xPos;
+    if (baseX.includes('w-text_w') || baseX.includes('(w-')) {
+      // Center horizontally with bounds
+      xPos = `max(10\\,min(w-text_w-10\\,(w-text_w)/2))`;
+    } else {
+      xPos = baseX;
+    }
+
+    let filter = `drawtext=text='${escapedLine}':font='${fontName}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${xPos}:y=${yPos}`;
 
     if (enableClause) {
       filter += `:enable='${enableClause}'`;
@@ -2953,17 +2965,24 @@ ipcMain.handle('add-subtitles', async (event, options) => {
   // Need to escape special characters in path for FFmpeg filter
   const escapedSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
-  // Position mapping
-  const positionMap = {
-    'top': 10,
-    'middle': '(h-text_h)/2',
-    'bottom': 'h-th-20'
-  };
+  // Margin settings based on position
+  // MarginV: vertical margin (larger value = further from edge)
+  // MarginL/MarginR: horizontal margins to prevent text overflow
+  let marginV, alignment;
+  if (style.position === 'top') {
+    marginV = 30;
+    alignment = 8;  // Top center in ASS
+  } else if (style.position === 'middle') {
+    marginV = 0;
+    alignment = 5;  // Middle center in ASS
+  } else {
+    marginV = 40;   // Bottom with good margin
+    alignment = 2;  // Bottom center in ASS
+  }
 
-  const marginV = style.position === 'top' ? 10 : (style.position === 'middle' ? 0 : 20);
-
-  // Build force_style string
-  const forceStyle = `FontSize=${style.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=${style.outlineWidth},MarginV=${marginV}`;
+  // Build force_style string with proper margins and wrapping
+  // WrapStyle=1 enables smart wrapping
+  const forceStyle = `FontSize=${style.fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=${style.outlineWidth},MarginV=${marginV},MarginL=40,MarginR=40,Alignment=${alignment},WrapStyle=1`;
 
   return new Promise((resolve, reject) => {
     const args = [
