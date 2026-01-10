@@ -1154,6 +1154,18 @@ function showToolProperties(tool) {
         </div>
 
         <div class="property-group">
+          <label>음성 언어</label>
+          <select id="subtitle-language" style="width: 100%; padding: 8px; background: #2d2d2d; color: white; border: 1px solid #444; border-radius: 4px; margin-top: 5px;">
+            <option value="ko" selected>한국어</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+            <option value="auto">자동 감지</option>
+          </select>
+          <small style="color: #666; display: block; margin-top: 5px;">💡 언어를 직접 선택하면 인식 정확도가 높아집니다</small>
+        </div>
+
+        <div class="property-group">
           <label>자막 스타일</label>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
             <div>
@@ -8958,6 +8970,7 @@ async function executeExtractAndAddSubtitles() {
   // Get subtitle style options
   const fontSizeSelect = document.getElementById('subtitle-font-size');
   const positionSelect = document.getElementById('subtitle-position');
+  const languageSelect = document.getElementById('subtitle-language');
 
   const fontStyle = {
     fontSize: fontSizeSelect ? parseInt(fontSizeSelect.value) : 24,
@@ -8967,6 +8980,8 @@ async function executeExtractAndAddSubtitles() {
     outlineWidth: 2
   };
 
+  const selectedLanguage = languageSelect ? languageSelect.value : 'ko';
+
   UIHelpers.disableAllButtons();
   showProgress();
   updateProgress(10, '음성 분석 준비 중...');
@@ -8974,10 +8989,15 @@ async function executeExtractAndAddSubtitles() {
 
   try {
     // Step 1: Extract subtitles using Whisper API
-    updateProgress(20, 'OpenAI Whisper API로 음성 분석 중...');
+    const langName = selectedLanguage === 'ko' ? '한국어' :
+                     selectedLanguage === 'en' ? '영어' :
+                     selectedLanguage === 'ja' ? '일본어' :
+                     selectedLanguage === 'zh' ? '중국어' : '자동 감지';
+    updateProgress(20, `OpenAI Whisper API로 음성 분석 중... (${langName})`);
 
     const extractResult = await window.electronAPI.extractSubtitles({
-      videoPath: currentVideo
+      videoPath: currentVideo,
+      language: selectedLanguage === 'auto' ? null : selectedLanguage
     });
 
     if (!extractResult.success) {
@@ -9033,6 +9053,10 @@ async function executeExtractSubtitlesOnly() {
     return;
   }
 
+  // Get language selection
+  const languageSelect = document.getElementById('subtitle-language');
+  const selectedLanguage = languageSelect ? languageSelect.value : 'ko';
+
   UIHelpers.disableAllButtons();
   showProgress();
   updateProgress(10, '음성 분석 준비 중...');
@@ -9040,10 +9064,15 @@ async function executeExtractSubtitlesOnly() {
 
   try {
     // Extract subtitles using Whisper API
-    updateProgress(20, 'OpenAI Whisper API로 음성 분석 중...');
+    const langName = selectedLanguage === 'ko' ? '한국어' :
+                     selectedLanguage === 'en' ? '영어' :
+                     selectedLanguage === 'ja' ? '일본어' :
+                     selectedLanguage === 'zh' ? '중국어' : '자동 감지';
+    updateProgress(20, `OpenAI Whisper API로 음성 분석 중... (${langName})`);
 
     const extractResult = await window.electronAPI.extractSubtitles({
-      videoPath: currentVideo
+      videoPath: currentVideo,
+      language: selectedLanguage === 'auto' ? null : selectedLanguage
     });
 
     if (!extractResult.success) {

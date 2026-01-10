@@ -2713,9 +2713,9 @@ ipcMain.handle('extract-frames', async (event, options) => {
 
 // Extract subtitles from video using OpenAI Whisper API
 ipcMain.handle('extract-subtitles', async (event, options) => {
-  const { videoPath } = options;
+  const { videoPath, language } = options;
 
-  logInfo('EXTRACT_SUBTITLES_START', 'Starting subtitle extraction', { videoPath });
+  logInfo('EXTRACT_SUBTITLES_START', 'Starting subtitle extraction', { videoPath, language });
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -2777,7 +2777,8 @@ ipcMain.handle('extract-subtitles', async (event, options) => {
     }
 
     // Send to OpenAI Whisper API
-    logInfo('WHISPER_API_CALL', 'Calling Whisper API', {});
+    const selectedLanguage = language || 'ko';  // Default to Korean
+    logInfo('WHISPER_API_CALL', 'Calling Whisper API', { language: selectedLanguage });
 
     const FormData = require('form-data');
     const formData = new FormData();
@@ -2785,6 +2786,17 @@ ipcMain.handle('extract-subtitles', async (event, options) => {
     formData.append('model', 'whisper-1');
     formData.append('response_format', 'verbose_json');
     formData.append('timestamp_granularities[]', 'segment');
+    formData.append('language', selectedLanguage);
+
+    // Add prompt to improve recognition accuracy
+    if (selectedLanguage === 'ko') {
+      // Korean prompt with common words and punctuation style
+      formData.append('prompt', '안녕하세요. 이것은 한국어 음성입니다. 정확한 맞춤법과 띄어쓰기를 사용해주세요.');
+    } else if (selectedLanguage === 'ja') {
+      formData.append('prompt', 'これは日本語の音声です。正確な表記をお願いします。');
+    } else if (selectedLanguage === 'zh') {
+      formData.append('prompt', '这是中文语音。请使用准确的标点符号。');
+    }
 
     const axios = require('axios');
     const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
