@@ -3648,9 +3648,9 @@ function updateTextOverlay(currentTime) {
   // Calculate scale factor (display size vs original video resolution)
   const scaleFactor = displayWidth / video.videoWidth;
 
-  // Show and update overlay
-  textOverlay.style.display = 'block';
-  textOverlay.textContent = textContent.value;
+  // Show and update overlay - wrap text in span for flex alignment to work
+  textOverlay.style.display = 'flex';
+  textOverlay.innerHTML = `<span style="display: inline-block;">${textContent.value.replace(/\n/g, '<br>')}</span>`;
 
   // Apply styles with scaling
   if (textSize && textSize.value) {
@@ -3697,7 +3697,11 @@ function updateTextOverlay(currentTime) {
   textOverlay.style.padding = '30px';
 
   const alignValue = textAlign && textAlign.value ? textAlign.value : 'left';
-  textOverlay.style.textAlign = alignValue;
+  // Apply text alignment to the inner span
+  const innerSpan = textOverlay.querySelector('span');
+  if (innerSpan) {
+    innerSpan.style.textAlign = alignValue;
+  }
 
   // Map text-align to justify-content for flex layout (horizontal)
   const xValue = textX && textX.value ? textX.value : '(w-text_w)/2';
