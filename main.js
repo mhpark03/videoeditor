@@ -1517,46 +1517,63 @@ ipcMain.handle('add-audio', async (event, options) => {
       if (isSilence) {
         const mode = insertMode || 'mix';
 
+        // Get video duration for all silence modes
+        const getVideoDuration = () => {
+          return new Promise((resolve) => {
+            const ffprobe = spawn(ffprobePath, [
+              '-v', 'error',
+              '-show_entries', 'format=duration',
+              '-of', 'default=noprint_wrappers=1:nokey=1',
+              videoPath
+            ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+            let output = '';
+            ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
+            ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
+          });
+        };
+
+        const videoDuration = await getVideoDuration();
+
+        logInfo('ADD_SILENCE_START', 'Adding silence to video', {
+          mode,
+          hasAudio,
+          audioStartTime,
+          silenceDuration,
+          videoDuration,
+          startTimeMs
+        });
+
         if (hasAudio) {
           if (mode === 'overwrite') {
             // Overwrite mode: Replace audio segment with silence
             const endTime = audioStartTime + silenceDuration;
 
-            // Get video duration to ensure audio matches video length
-            const getVideoDuration = () => {
-              return new Promise((resolve) => {
-                const ffprobe = spawn(ffprobePath, [
-                  '-v', 'error',
-                  '-show_entries', 'format=duration',
-                  '-of', 'default=noprint_wrappers=1:nokey=1',
-                  videoPath
-                ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+            logInfo('ADD_SILENCE_OVERWRITE', 'Overwrite mode params', {
+              audioStartTime, silenceDuration, endTime, videoDuration
+            });
 
-                let output = '';
-                ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
-                ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
-              });
-            };
-
-            const videoDuration = await getVideoDuration();
-
+            // Use volume filter to mute the range instead of concat
             args = [
               '-i', videoPath,
-              '-f', 'lavfi',
-              '-i', `anullsrc=r=44100:cl=stereo:d=${silenceDuration}`,
               '-filter_complex',
-              `[0:a]aselect='lt(t,${audioStartTime})',asetpts=N/SR/TB[before];` +
-              `[0:a]aselect='gte(t,${endTime})',asetpts=N/SR/TB[after];` +
-              `[before][1:a][after]concat=n=3:v=0:a=1,apad=whole_dur=${videoDuration}[aout]`,
+              `[0:a]volume=enable='between(t,${audioStartTime},${endTime})':volume=0,atrim=0:${videoDuration}[aout]`,
               '-map', '0:v',
               '-map', '[aout]',
               '-c:v', 'copy',
               '-c:a', 'aac',
+              '-t', videoDuration.toString(),
               '-y',
               actualOutputPath
             ];
           } else if (mode === 'push') {
             // Push mode: Insert silence and push existing audio backward
+            // Video length stays the same - audio at end gets cut off
+
+            logInfo('ADD_SILENCE_PUSH', 'Push mode params', {
+              audioStartTime, silenceDuration, videoDuration
+            });
+
             args = [
               '-i', videoPath,
               '-f', 'lavfi',
@@ -1564,76 +1581,51 @@ ipcMain.handle('add-audio', async (event, options) => {
               '-filter_complex',
               `[0:a]aselect='lt(t,${audioStartTime})',asetpts=N/SR/TB[before];` +
               `[0:a]aselect='gte(t,${audioStartTime})',asetpts=N/SR/TB[after];` +
-              `[before][1:a][after]concat=n=3:v=0:a=1[aout]`,
+              `[before][1:a][after]concat=n=3:v=0:a=1,atrim=0:${videoDuration},apad=whole_dur=${videoDuration}[aout]`,
               '-map', '0:v',
               '-map', '[aout]',
               '-c:v', 'copy',
               '-c:a', 'aac',
+              '-t', videoDuration.toString(),
               '-y',
               actualOutputPath
             ];
           } else {
             // Mix mode (default): Mix silence with existing audio (effectively mutes that section)
-            // Get video duration to ensure output matches video length
-            const getVideoDuration = () => {
-              return new Promise((resolve) => {
-                const ffprobe = spawn(ffprobePath, [
-                  '-v', 'error',
-                  '-show_entries', 'format=duration',
-                  '-of', 'default=noprint_wrappers=1:nokey=1',
-                  videoPath
-                ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-
-                let output = '';
-                ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
-                ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
-              });
-            };
-
-            const videoDuration = await getVideoDuration();
+            logInfo('ADD_SILENCE_MIX', 'Mix mode params', {
+              audioStartTime, silenceDuration, videoDuration, startTimeMs
+            });
 
             args = [
               '-i', videoPath,
               '-f', 'lavfi',
               '-i', `anullsrc=r=44100:cl=stereo:d=${silenceDuration}`,
-              '-filter_complex', `[1:a]adelay=${startTimeMs}|${startTimeMs}[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=0,volume=1,apad=whole_dur=${videoDuration}[aout]`,
+              '-filter_complex', `[1:a]adelay=${startTimeMs}|${startTimeMs}[a1];[0:a][a1]amix=inputs=2:duration=first:dropout_transition=0,atrim=0:${videoDuration}[aout]`,
               '-map', '0:v',
               '-map', '[aout]',
               '-c:v', 'copy',
               '-c:a', 'aac',
+              '-t', videoDuration.toString(),
               '-y',
               actualOutputPath
             ];
           }
         } else {
           // Video has no audio - add silence as new track
-          // Get video duration and pad audio to match
-          const getVideoDuration = () => {
-            return new Promise((resolve) => {
-              const ffprobe = spawn(ffprobePath, [
-                '-v', 'error',
-                '-show_entries', 'format=duration',
-                '-of', 'default=noprint_wrappers=1:nokey=1',
-                videoPath
-              ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-
-              let output = '';
-              ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
-              ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
-            });
-          };
-
-          const videoDuration = await getVideoDuration();
+          logInfo('ADD_SILENCE_NO_AUDIO', 'Adding silence to video without audio', {
+            audioStartTime, silenceDuration, videoDuration, startTimeMs
+          });
 
           args = [
             '-f', 'lavfi',
             '-i', `anullsrc=r=44100:cl=stereo:d=${silenceDuration}`,
             '-i', videoPath,
-            '-filter_complex', `[0:a]adelay=${startTimeMs}|${startTimeMs},apad=whole_dur=${videoDuration}[a1]`,
+            '-filter_complex', `[0:a]adelay=${startTimeMs}|${startTimeMs},atrim=0:${videoDuration},apad=whole_dur=${videoDuration}[a1]`,
             '-map', '1:v',
             '-map', '[a1]',
             '-c:v', 'copy',
             '-c:a', 'aac',
+            '-t', videoDuration.toString(),
             '-y',
             actualOutputPath
           ];
