@@ -2599,6 +2599,14 @@ ipcMain.handle('extract-frames', async (event, options) => {
 
   // Use outputDir if provided, otherwise use temp directory
   const actualOutputDir = outputDir || os.tmpdir();
+
+  // Ensure output directory exists
+  const fs = require('fs');
+  if (!fs.existsSync(actualOutputDir)) {
+    fs.mkdirSync(actualOutputDir, { recursive: true });
+    logInfo('EXTRACT_FRAMES_DIR_CREATED', 'Output directory created', { actualOutputDir });
+  }
+
   const firstFramePath = path.join(actualOutputDir, `${basename}_first_${timestamp}.jpg`);
   const lastFramePath = path.join(actualOutputDir, `${basename}_last_${timestamp}.jpg`);
 
