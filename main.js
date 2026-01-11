@@ -2421,11 +2421,15 @@ function buildMultiLineDrawtextFilter(text, fontName, fontSize, fontColor, baseX
 
     // x position with bounds check
     let xPos;
-    if (baseX.includes('w-text_w') || baseX.includes('(w-')) {
+    if (baseX.includes('(w-text_w)/2')) {
       // Center horizontally with bounds
       xPos = `max(10\\,min(w-text_w-10\\,(w-text_w)/2))`;
+    } else if (baseX.includes('w-text_w-') || baseX.includes('w-text_w)')) {
+      // Right alignment with bounds (w-text_w-30 or similar)
+      xPos = `max(10\\,min(w-text_w-10\\,w-text_w-30))`;
     } else {
-      xPos = baseX;
+      // Left or fixed position
+      xPos = `max(10\\,min(w-text_w-10\\,${baseX}))`;
     }
 
     // Convert color from #ffffff to 0xffffff format for FFmpeg compatibility
