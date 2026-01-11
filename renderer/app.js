@@ -6348,6 +6348,69 @@ let selectedMixingTrackFile = null;
 let currentPlayingTrackIndex = -1;
 let mixingTrackAudio = null;
 
+// Storage key for mixing session
+const MIXING_SESSION_KEY = 'kiosk_video_editor_mixing_session';
+
+// Save mixing session to localStorage
+function saveMixingSession() {
+  if (mixingTracks.length === 0) {
+    localStorage.removeItem(MIXING_SESSION_KEY);
+    return;
+  }
+
+  const sessionData = {
+    tracks: mixingTracks,
+    savedAt: new Date().toISOString()
+  };
+
+  try {
+    localStorage.setItem(MIXING_SESSION_KEY, JSON.stringify(sessionData));
+    console.log('[Mixing] Session saved:', mixingTracks.length, 'tracks');
+  } catch (error) {
+    console.error('[Mixing] Failed to save session:', error);
+  }
+}
+
+// Load mixing session from localStorage
+function loadMixingSession() {
+  try {
+    const saved = localStorage.getItem(MIXING_SESSION_KEY);
+    if (!saved) return null;
+
+    const sessionData = JSON.parse(saved);
+    console.log('[Mixing] Session loaded:', sessionData.tracks?.length, 'tracks, saved at:', sessionData.savedAt);
+    return sessionData;
+  } catch (error) {
+    console.error('[Mixing] Failed to load session:', error);
+    return null;
+  }
+}
+
+// Restore mixing session
+function restoreMixingSession() {
+  const session = loadMixingSession();
+  if (session && session.tracks && session.tracks.length > 0) {
+    mixingTracks = session.tracks;
+    renderMixingTracksPreview();
+    return true;
+  }
+  return false;
+}
+
+// Clear mixing session
+function clearMixingSession() {
+  localStorage.removeItem(MIXING_SESSION_KEY);
+  mixingTracks = [];
+  stopMixingTrack();
+  renderMixingTracksPreview();
+  alert('저장된 작업이 초기화되었습니다.');
+}
+
+// Auto-save after track modifications
+function autoSaveMixingSession() {
+  saveMixingSession();
+}
+
 async function selectMixingTrack(trackType) {
   try {
     const filePath = await window.electronAPI.selectAudio();
@@ -6407,6 +6470,9 @@ function addMixingTrack(trackType) {
   // Reset selected file
   selectedMixingTrackFile = null;
 
+  // Auto-save session
+  autoSaveMixingSession();
+
   // Update preview
   renderMixingTracksPreview();
 
@@ -6427,6 +6493,10 @@ function removeMixingTrack(index) {
     }
 
     mixingTracks.splice(index, 1);
+
+    // Auto-save session
+    autoSaveMixingSession();
+
     renderMixingTracksPreview();
     alert(`"${track.name}" 트랙이 삭제되었습니다.`);
     showPropertyPanel('mix-tracks');
@@ -6440,13 +6510,37 @@ function renderMixingTracksPreview() {
   if (!previewContainer) return;
 
   if (mixingTracks.length === 0) {
-    // Show empty state
+    // Check for saved session
+    const savedSession = loadMixingSession();
+    const hasSavedSession = savedSession && savedSession.tracks && savedSession.tracks.length > 0;
+
+    // Show empty state with restore option if available
     if (placeholder) {
       placeholder.style.display = 'flex';
-      placeholder.innerHTML = `
-        <p style="color: #888; font-size: 16px;">트랙을 추가하여 믹싱을 시작하세요</p>
-        <p style="color: #666; font-size: 13px; margin-top: 10px;">좌측 메뉴에서 보컬/반주/효과음 트랙을 추가하세요</p>
-      `;
+      placeholder.style.flexDirection = 'column';
+      placeholder.style.alignItems = 'center';
+      placeholder.style.justifyContent = 'center';
+
+      if (hasSavedSession) {
+        const savedDate = new Date(savedSession.savedAt);
+        const dateStr = savedDate.toLocaleString('ko-KR');
+        placeholder.innerHTML = `
+          <p style="color: #888; font-size: 16px;">트랙을 추가하여 믹싱을 시작하세요</p>
+          <p style="color: #666; font-size: 13px; margin-top: 10px;">좌측 메뉴에서 보컬/반주/효과음 트랙을 추가하세요</p>
+          <div style="margin-top: 30px; padding: 20px; background: #2d2d2d; border-radius: 8px; border: 1px solid #667eea; text-align: center;">
+            <p style="color: #667eea; font-size: 14px; margin: 0 0 10px 0;">💾 저장된 작업이 있습니다</p>
+            <p style="color: #888; font-size: 12px; margin: 0 0 15px 0;">${savedSession.tracks.length}개 트랙 | ${dateStr}</p>
+            <button onclick="restoreMixingSession()" style="background: #667eea; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              📂 이어서 작업하기
+            </button>
+          </div>
+        `;
+      } else {
+        placeholder.innerHTML = `
+          <p style="color: #888; font-size: 16px;">트랙을 추가하여 믹싱을 시작하세요</p>
+          <p style="color: #666; font-size: 13px; margin-top: 10px;">좌측 메뉴에서 보컬/반주/효과음 트랙을 추가하세요</p>
+        `;
+      }
     }
     return;
   }
@@ -6464,9 +6558,14 @@ function renderMixingTracksPreview() {
     const allSelected = selectedCount === mixingTracks.length;
 
     placeholder.innerHTML = `
-      <div style="margin-bottom: 15px; text-align: center;">
-        <h3 style="color: #e0e0e0; margin: 0 0 5px 0;">🎚️ 믹싱 트랙 목록</h3>
-        <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택됨)</p>
+      <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="color: #e0e0e0; margin: 0 0 5px 0;">🎚️ 믹싱 트랙 목록</h3>
+          <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택됨)</p>
+        </div>
+        <button onclick="if(confirm('모든 트랙을 삭제하고 작업을 초기화하시겠습니까?')) clearMixingSession()" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 11px;" title="작업 초기화">
+          🗑️ 초기화
+        </button>
       </div>
       <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #3d3d3d; border-radius: 6px; margin-bottom: 10px;">
         <input type="checkbox" id="select-all-tracks" ${allSelected ? 'checked' : ''} onchange="toggleAllMixingTracks(this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
@@ -6570,6 +6669,9 @@ function updateMixingTrackVolume(index, volume) {
       mixingTrackAudio.volume = volume / 100;
     }
 
+    // Auto-save session
+    autoSaveMixingSession();
+
     // Update the display
     renderMixingTracksPreview();
   }
@@ -6630,6 +6732,7 @@ async function executeMixTracks() {
 function toggleMixingTrackSelection(index, selected) {
   if (index >= 0 && index < mixingTracks.length) {
     mixingTracks[index].selected = selected;
+    autoSaveMixingSession();
     renderMixingTracksPreview();
   }
 }
@@ -6638,6 +6741,7 @@ function toggleAllMixingTracks(selected) {
   mixingTracks.forEach(track => {
     track.selected = selected;
   });
+  autoSaveMixingSession();
   renderMixingTracksPreview();
 }
 
@@ -6700,6 +6804,10 @@ window.renderMixingTracksPreview = renderMixingTracksPreview;
 window.toggleMixingTrackSelection = toggleMixingTrackSelection;
 window.toggleAllMixingTracks = toggleAllMixingTracks;
 window.mixSelectedTracks = mixSelectedTracks;
+window.saveMixingSession = saveMixingSession;
+window.loadMixingSession = loadMixingSession;
+window.restoreMixingSession = restoreMixingSession;
+window.clearMixingSession = clearMixingSession;
 
 // Export dialog
 function showExportDialog() {
