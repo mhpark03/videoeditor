@@ -183,7 +183,7 @@ export async function openSaveDialog(defaultFilename, defaultExtension = 'mp4') 
       defaultPath: defaultFilename,
       filters: [
         { name: 'Video Files', extensions: ['mp4', 'avi', 'mov', 'mkv'] },
-        { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac'] },
+        { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'flac'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     });

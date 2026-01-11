@@ -401,7 +401,7 @@ ipcMain.handle('select-audio', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters: [
-      { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg'] }
+      { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'] }
     ]
   });
 
@@ -428,7 +428,7 @@ ipcMain.handle('select-media', async (event, mediaType) => {
       break;
     case 'audio':
       filters = [
-        { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg'] }
+        { name: 'Audio', extensions: ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'] }
       ];
       break;
     case 'srt':
@@ -438,7 +438,7 @@ ipcMain.handle('select-media', async (event, mediaType) => {
       break;
     default:
       filters = [
-        { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'mp4', 'avi', 'mov', 'mkv', 'webm', 'mp3', 'wav', 'aac', 'm4a', 'ogg'] }
+        { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'mp4', 'avi', 'mov', 'mkv', 'webm', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'] }
       ];
   }
 
@@ -461,10 +461,10 @@ ipcMain.handle('select-output', async (event, defaultName) => {
   const ext = defaultName ? path.extname(defaultName).toLowerCase() : '.mp4';
   let filters;
 
-  if (ext === '.mp3' || ext === '.wav' || ext === '.aac' || ext === '.ogg') {
+  if (ext === '.mp3' || ext === '.wav' || ext === '.aac' || ext === '.ogg' || ext === '.flac') {
     // Audio file
     filters = [
-      { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'ogg'] },
+      { name: 'Audio Files', extensions: ['mp3', 'wav', 'aac', 'ogg', 'flac'] },
       { name: 'All Files', extensions: ['*'] }
     ];
   } else {
