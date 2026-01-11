@@ -3509,40 +3509,56 @@ ipcMain.handle('audio-tuning', async (event, options) => {
   // Create temp output if not specified
   let finalOutputPath = outputPath;
   if (!finalOutputPath) {
-    const os = require('os');
     const tempDir = os.tmpdir();
     const timestamp = Date.now();
-    const ext = path.extname(inputPath);
-    finalOutputPath = path.join(tempDir, `tuned_audio_${timestamp}${ext}`);
+    finalOutputPath = path.join(tempDir, `tuned_audio_${timestamp}.mp3`);
   }
 
+  // Build FFmpeg arguments
+  const args = ['-i', inputPath];
+
+  // Add filter if any
+  if (filters.length > 0) {
+    const filterString = filters.join(',');
+    logInfo('AUDIO_TUNING_FILTERS', 'Applying filters', { filterString });
+    args.push('-af', filterString);
+  }
+
+  // Audio codec settings
+  args.push('-c:a', 'libmp3lame');
+  args.push('-b:a', '320k');
+  args.push('-ar', '44100');
+  args.push('-ac', '2');
+  args.push('-y'); // Overwrite output
+  args.push(finalOutputPath);
+
+  logInfo('AUDIO_TUNING_FFMPEG', 'FFmpeg command', { args: args.join(' ') });
+
   return new Promise((resolve, reject) => {
-    let ffmpegCommand = ffmpeg(inputPath);
+    const ffmpeg = spawn(ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
 
-    // Apply filters if any
-    if (filters.length > 0) {
-      const filterString = filters.join(',');
-      logInfo('AUDIO_TUNING_FILTERS', 'Applying filters', { filterString });
-      ffmpegCommand = ffmpegCommand.audioFilters(filterString);
-    }
+    let stderrData = '';
 
-    ffmpegCommand
-      .audioCodec('libmp3lame')
-      .audioBitrate('320k')
-      .audioFrequency(44100)
-      .audioChannels(2)
-      .on('start', (cmd) => {
-        logInfo('AUDIO_TUNING_FFMPEG', 'FFmpeg command', { cmd });
-      })
-      .on('end', () => {
+    ffmpeg.stderr.on('data', (data) => {
+      stderrData += data.toString();
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
         logInfo('AUDIO_TUNING_SUCCESS', 'Audio tuning completed', { outputPath: finalOutputPath });
         resolve({ success: true, outputPath: finalOutputPath });
-      })
-      .on('error', (err) => {
-        logError('AUDIO_TUNING_ERROR', 'Audio tuning failed', { error: err.message });
-        reject(new Error(`Audio tuning failed: ${err.message}`));
-      })
-      .save(finalOutputPath);
+      } else {
+        logError('AUDIO_TUNING_ERROR', 'Audio tuning failed', { code, stderr: stderrData });
+        reject(new Error(`Audio tuning failed with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      logError('AUDIO_TUNING_ERROR', 'FFmpeg spawn error', { error: err.message });
+      reject(new Error(`Audio tuning failed: ${err.message}`));
+    });
   });
 });
 
