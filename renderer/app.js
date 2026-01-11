@@ -9624,21 +9624,21 @@ function updateModeUI() {
   // Update header mode buttons
   const videoModeBtn = document.getElementById('video-mode-btn');
   const audioModeBtn = document.getElementById('audio-mode-btn');
-  const ttsModeBtn = document.getElementById('tts-mode-btn');
+  const contentModeBtn = document.getElementById('content-mode-btn');
 
-  if (videoModeBtn && audioModeBtn && ttsModeBtn) {
+  if (videoModeBtn && audioModeBtn && contentModeBtn) {
     // Remove active from all
     videoModeBtn.classList.remove('active');
     audioModeBtn.classList.remove('active');
-    ttsModeBtn.classList.remove('active');
+    contentModeBtn.classList.remove('active');
 
     // Add active to current mode
     if (currentMode === 'video') {
       videoModeBtn.classList.add('active');
     } else if (currentMode === 'audio') {
       audioModeBtn.classList.add('active');
-    } else if (currentMode === 'tts') {
-      ttsModeBtn.classList.add('active');
+    } else if (currentMode === 'content') {
+      contentModeBtn.classList.add('active');
     }
   }
 }
