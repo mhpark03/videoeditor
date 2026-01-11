@@ -1102,47 +1102,32 @@ function showToolProperties(tool) {
     // ============================================================================
     // Mixing Mode Tools
     // ============================================================================
-    case 'add-vocal-track':
-    case 'add-instrument-track':
-    case 'add-effect-track':
-      const trackType = tool === 'add-vocal-track' ? 'vocal' : (tool === 'add-instrument-track' ? 'instrument' : 'effect');
-      const trackTypeLabel = tool === 'add-vocal-track' ? '보컬' : (tool === 'add-instrument-track' ? '반주' : '효과음');
-      const trackIcon = tool === 'add-vocal-track' ? '🎤' : (tool === 'add-instrument-track' ? '🎸' : '🔔');
-
+    case 'add-track':
       propertiesPanel.innerHTML = `
         <div class="property-group">
-          <label>${trackIcon} ${trackTypeLabel} 트랙 추가</label>
-          <button class="property-btn secondary" onclick="selectMixingTrack('${trackType}')" style="margin-top: 10px;">
-            🎵 ${trackTypeLabel} 파일 선택
+          <label>🎵 트랙 추가</label>
+          <button class="property-btn secondary" onclick="selectMixingTrack()" style="margin-top: 10px;">
+            📁 오디오 파일 선택
           </button>
           <div id="selected-track-info" style="display: none; margin-top: 10px; padding: 10px; background: #2d2d2d; border-radius: 5px;">
             <div style="color: #e0e0e0; font-size: 14px;" id="selected-track-name"></div>
           </div>
         </div>
         <div class="property-group" id="track-label-group" style="display: none;">
-          <label>트랙 레이블 (구분용)</label>
-          <input type="text" id="track-label" placeholder="예: 메인보컬, 코러스, 드럼" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
-          <small style="color: #888; display: block; margin-top: 5px;">트랙을 구분하기 위한 짧은 레이블</small>
-        </div>
-        <div class="property-group" id="track-name-group" style="display: none;">
           <label>트랙 이름</label>
-          <input type="text" id="track-custom-name" placeholder="트랙 이름을 입력하세요" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+          <input type="text" id="track-label" placeholder="예: 메인보컬, 코러스, 드럼, Bass" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+          <small style="color: #888; display: block; margin-top: 5px;">트랙을 구분하기 위한 이름을 입력하세요</small>
         </div>
         <div class="property-group" id="track-volume-group" style="display: none;">
           <label>볼륨</label>
           <input type="number" id="track-volume" min="0" max="200" value="100" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
           <small style="color: #888; display: block; margin-top: 5px;">0-200% (100%가 기본값)</small>
         </div>
-        <div class="property-group" id="track-delay-group" style="display: none;">
-          <label>시작 지연 (초)</label>
-          <input type="number" id="track-delay" value="0" min="0" step="0.1" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
-          <small style="color: #888; display: block; margin-top: 5px;">다른 트랙보다 늦게 시작하려면 값을 입력하세요</small>
-        </div>
-        <button class="property-btn" id="add-track-btn" onclick="addMixingTrack('${trackType}')" style="display: none;">
+        <button class="property-btn" id="add-track-btn" onclick="addMixingTrack()" style="display: none;">
           ➕ 트랙에 추가
         </button>
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 15px;">
-          <small style="color: #aaa;">💡 ${trackTypeLabel} 파일을 선택하여 믹싱 트랙에 추가합니다.</small>
+          <small style="color: #aaa;">💡 오디오 파일을 선택하여 믹싱 트랙에 추가합니다.</small>
         </div>
       `;
       break;
@@ -6359,6 +6344,9 @@ let syncPlaybackActive = false;
 let syncAudioElements = [];  // Array of Audio elements for sync playback
 let syncPlaybackInterval = null;
 
+// Track seek positions (percentage 0-100 for each track)
+let trackSeekPositions = {};
+
 // Storage key for mixing session
 const MIXING_SESSION_KEY = 'kiosk_video_editor_mixing_session';
 
@@ -6436,32 +6424,25 @@ function autoSaveMixingSession() {
   saveMixingSession();
 }
 
-async function selectMixingTrack(trackType) {
+async function selectMixingTrack() {
   try {
     const filePath = await window.electronAPI.selectAudio();
     if (filePath) {
       selectedMixingTrackFile = filePath;
       const fileName = filePath.split('\\').pop().split('/').pop();
-      const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
 
       // Show file info and enable add button
       const trackInfo = document.getElementById('selected-track-info');
       const trackName = document.getElementById('selected-track-name');
       const trackLabelGroup = document.getElementById('track-label-group');
-      const trackNameGroup = document.getElementById('track-name-group');
-      const trackCustomName = document.getElementById('track-custom-name');
       const volumeGroup = document.getElementById('track-volume-group');
-      const delayGroup = document.getElementById('track-delay-group');
       const addBtn = document.getElementById('add-track-btn');
 
       if (trackInfo && trackName && addBtn) {
         trackName.textContent = `📄 ${fileName}`;
         trackInfo.style.display = 'block';
         if (trackLabelGroup) trackLabelGroup.style.display = 'block';
-        if (trackNameGroup) trackNameGroup.style.display = 'block';
-        if (trackCustomName) trackCustomName.value = fileNameWithoutExt;
         if (volumeGroup) volumeGroup.style.display = 'block';
-        if (delayGroup) delayGroup.style.display = 'block';
         addBtn.style.display = 'block';
       }
     }
@@ -6471,28 +6452,24 @@ async function selectMixingTrack(trackType) {
   }
 }
 
-function addMixingTrack(trackType) {
+function addMixingTrack() {
   if (!selectedMixingTrackFile) {
     alert('먼저 파일을 선택해주세요.');
     return;
   }
 
   const volume = parseInt(document.getElementById('track-volume')?.value || 100);
-  const delay = parseFloat(document.getElementById('track-delay')?.value || 0);
-  const customName = document.getElementById('track-custom-name')?.value?.trim();
   const trackLabel = document.getElementById('track-label')?.value?.trim() || '';
   const fileName = selectedMixingTrackFile.split('\\').pop().split('/').pop();
-  const trackName = customName || fileName.replace(/\.[^/.]+$/, '');
+  const trackName = fileName.replace(/\.[^/.]+$/, '');
 
   // Add track to mixing tracks array
   mixingTracks.push({
     id: Date.now(),
-    type: trackType,
     file: selectedMixingTrackFile,
     name: trackName,
     label: trackLabel,  // Custom label for track identification
     volume: volume,
-    delay: delay,
     selected: true  // Default to selected
   });
 
@@ -6682,17 +6659,26 @@ async function renderMixingTracksWaveform() {
     // Playhead indicator
     const playhead = document.createElement('div');
     playhead.id = `waveform-playhead-${index}`;
-    playhead.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5722; display: none; pointer-events: none;';
+
+    // Check if there's a stored seek position for this track
+    const trackId = track.id;
+    const storedSeekPercent = trackSeekPositions[trackId];
+    if (storedSeekPercent !== undefined && currentPlayingTrackIndex !== index) {
+      // Show playhead at stored position (yellow for set position)
+      playhead.style.cssText = `position: absolute; top: 0; bottom: 0; width: 2px; background: #ffeb3b; display: block; pointer-events: none; left: ${storedSeekPercent}%;`;
+    } else {
+      playhead.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5722; display: none; pointer-events: none;';
+    }
 
     waveformContainer.appendChild(loadingDiv);
     waveformContainer.appendChild(waveformImg);
     waveformContainer.appendChild(playhead);
 
-    // Click to seek
+    // Click to set position (without playing)
     waveformContainer.onclick = (e) => {
       const rect = waveformContainer.getBoundingClientRect();
       const percent = ((e.clientX - rect.left) / rect.width) * 100;
-      seekMixingTrackWaveform(index, percent);
+      setTrackSeekPosition(index, percent);
     };
 
     trackElement.appendChild(waveformContainer);
@@ -6714,22 +6700,62 @@ async function renderMixingTracksWaveform() {
     };
     trackElement.appendChild(playBtn);
 
-    // Volume input (numeric)
+    // Volume input (text type for better compatibility)
     const volumeContainer = document.createElement('div');
     volumeContainer.style.cssText = 'display: flex; align-items: center; gap: 2px; flex-shrink: 0;';
+    volumeContainer.onclick = (e) => e.stopPropagation();
 
     const volumeInput = document.createElement('input');
-    volumeInput.type = 'number';
-    volumeInput.min = '0';
-    volumeInput.max = '200';
+    volumeInput.type = 'text';
     volumeInput.value = track.volume;
-    volumeInput.style.cssText = 'width: 45px; height: 24px; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; color: #e0e0e0; text-align: center; font-size: 11px; flex-shrink: 0;';
-    volumeInput.title = '볼륨 (0-200%)';
-    volumeInput.onchange = () => {
+    volumeInput.id = `volume-input-${index}`;
+    volumeInput.setAttribute('inputmode', 'numeric');
+    volumeInput.setAttribute('pattern', '[0-9]*');
+    volumeInput.style.cssText = 'width: 50px; height: 26px; background: #2d2d2d; border: 1px solid #555; border-radius: 4px; color: #fff; text-align: center; font-size: 12px; flex-shrink: 0; cursor: text; outline: none;';
+    volumeInput.title = '볼륨 (0-200%) - 클릭하여 직접 입력';
+
+    // Focus styling
+    volumeInput.onfocus = (e) => {
+      e.stopPropagation();
+      volumeInput.style.borderColor = '#667eea';
+      volumeInput.style.background = '#3d3d3d';
+      volumeInput.select();
+    };
+
+    volumeInput.onblur = () => {
+      volumeInput.style.borderColor = '#555';
+      volumeInput.style.background = '#2d2d2d';
       let vol = parseInt(volumeInput.value) || 0;
       vol = Math.max(0, Math.min(200, vol));
       volumeInput.value = vol;
       updateMixingTrackVolumeWaveform(index, vol);
+    };
+
+    // Real-time volume update on input
+    volumeInput.oninput = () => {
+      // Only allow numbers
+      volumeInput.value = volumeInput.value.replace(/[^0-9]/g, '');
+      let vol = parseInt(volumeInput.value) || 0;
+      vol = Math.max(0, Math.min(200, vol));
+      // Update playing audio volume immediately
+      if (currentPlayingTrackIndex === index && mixingTrackAudio) {
+        mixingTrackAudio.volume = Math.min(vol, 200) / 100;
+      }
+      // Update sync playback audio volume
+      if (syncPlaybackActive && syncAudioElements[index]) {
+        syncAudioElements[index].volume = Math.min(vol, 200) / 100;
+      }
+    };
+
+    volumeInput.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        volumeInput.blur();
+      }
+    };
+
+    volumeInput.onmousedown = (e) => {
+      e.stopPropagation();
     };
 
     const volumeLabel = document.createElement('span');
@@ -6789,7 +6815,70 @@ async function loadWaveformForTrack(index, filePath) {
   }
 }
 
-// Play track with waveform UI update
+// Set track seek position (without playing) - shows playhead at position
+// Also syncs all selected tracks to the same position
+async function setTrackSeekPosition(index, percent) {
+  if (index < 0 || index >= mixingTracks.length) return;
+
+  // Sync all selected tracks to the same percentage position
+  for (let i = 0; i < mixingTracks.length; i++) {
+    const t = mixingTracks[i];
+    if (t.selected) {
+      trackSeekPositions[t.id] = percent;
+
+      // Update playhead visually for each selected track
+      const ph = document.getElementById(`waveform-playhead-${i}`);
+      if (ph) {
+        ph.style.left = `${percent}%`;
+        ph.style.display = 'block';
+        ph.style.background = '#ffeb3b';  // Yellow for set position
+      }
+    }
+  }
+
+  // Update time display for all selected tracks
+  for (let i = 0; i < mixingTracks.length; i++) {
+    const t = mixingTracks[i];
+    if (!t.selected) continue;
+
+    const timeDisplay = document.getElementById(`waveform-time-${i}`);
+    if (timeDisplay) {
+      // Try to get duration from cached audio or load it
+      try {
+        const tempAudio = new Audio();
+        tempAudio.src = `file://${t.file.replace(/\\/g, '/')}`;
+
+        tempAudio.onloadedmetadata = () => {
+          const duration = tempAudio.duration;
+          const currentTime = (percent / 100) * duration;
+          timeDisplay.textContent = formatTrackTime(currentTime);
+        };
+        tempAudio.onerror = async () => {
+          // Fallback
+          try {
+            const audioData = await window.electronAPI.readAudioFile(t.file);
+            if (audioData) {
+              tempAudio.src = `data:audio/mpeg;base64,${audioData}`;
+            }
+          } catch (e) {
+            // ignore
+          }
+        };
+      } catch (e) {
+        console.log('Could not get duration for time display');
+      }
+    }
+  }
+
+  // If any track is currently playing, seek to that position
+  if (currentPlayingTrackIndex >= 0 && mixingTrackAudio) {
+    if (mixingTrackAudio.duration) {
+      mixingTrackAudio.currentTime = (percent / 100) * mixingTrackAudio.duration;
+    }
+  }
+}
+
+// Play track with waveform UI update (starts from stored position if set)
 function playMixingTrackWaveform(index) {
   if (index < 0 || index >= mixingTracks.length) return;
 
@@ -6803,12 +6892,19 @@ function playMixingTrackWaveform(index) {
   stopMixingTrackWaveform();
 
   const track = mixingTracks[index];
+  const trackId = track.id;
+  const seekPercent = trackSeekPositions[trackId] || 0;
 
   // Create audio element and play
   mixingTrackAudio = new Audio();
   mixingTrackAudio.volume = track.volume / 100;
 
   const startPlayback = () => {
+    // Seek to stored position if set
+    if (seekPercent > 0 && mixingTrackAudio.duration) {
+      mixingTrackAudio.currentTime = (seekPercent / 100) * mixingTrackAudio.duration;
+    }
+
     currentPlayingTrackIndex = index;
     renderMixingTracksWaveform();
 
@@ -6820,12 +6916,26 @@ function playMixingTrackWaveform(index) {
 
   // Try to load and play
   mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+
+  // Wait for metadata to get duration for seeking
+  mixingTrackAudio.onloadedmetadata = () => {
+    // Seek to stored position before playing
+    if (seekPercent > 0 && mixingTrackAudio.duration) {
+      mixingTrackAudio.currentTime = (seekPercent / 100) * mixingTrackAudio.duration;
+    }
+  };
+
   mixingTrackAudio.play().then(startPlayback).catch(async (error) => {
     console.log('Direct file play failed, trying via IPC:', error);
     try {
       const audioData = await window.electronAPI.readAudioFile(track.file);
       if (audioData) {
         mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
+        mixingTrackAudio.onloadedmetadata = () => {
+          if (seekPercent > 0 && mixingTrackAudio.duration) {
+            mixingTrackAudio.currentTime = (seekPercent / 100) * mixingTrackAudio.duration;
+          }
+        };
         await mixingTrackAudio.play();
         startPlayback();
       }
@@ -6847,12 +6957,24 @@ function stopMixingTrackWaveform() {
     clearInterval(mixingTrackUpdateInterval);
     mixingTrackUpdateInterval = null;
   }
+
+  const prevIndex = currentPlayingTrackIndex;
+
+  // Save current position before stopping
+  if (mixingTrackAudio && prevIndex >= 0 && prevIndex < mixingTracks.length) {
+    const track = mixingTracks[prevIndex];
+    if (mixingTrackAudio.duration) {
+      const percent = (mixingTrackAudio.currentTime / mixingTrackAudio.duration) * 100;
+      trackSeekPositions[track.id] = percent;
+    }
+  }
+
   if (mixingTrackAudio) {
     mixingTrackAudio.pause();
     mixingTrackAudio.currentTime = 0;
     mixingTrackAudio = null;
   }
-  const prevIndex = currentPlayingTrackIndex;
+
   currentPlayingTrackIndex = -1;
 
   // Update only the relevant UI elements
@@ -7028,14 +7150,25 @@ async function startSyncPlayback() {
       continue;
     }
 
-    syncAudioElements.push(audio);
+    syncAudioElements.push({ audio, trackIndex: i });
+  }
+
+  // Seek to stored positions for each track
+  for (const item of syncAudioElements) {
+    if (item && item.audio) {
+      const track = mixingTracks[item.trackIndex];
+      const seekPercent = trackSeekPositions[track.id] || 0;
+      if (seekPercent > 0 && item.audio.duration) {
+        item.audio.currentTime = (seekPercent / 100) * item.audio.duration;
+      }
+    }
   }
 
   // Start all audio elements simultaneously
   const playPromises = [];
-  for (const audio of syncAudioElements) {
-    if (audio) {
-      playPromises.push(audio.play().catch(e => console.error('Play error:', e)));
+  for (const item of syncAudioElements) {
+    if (item && item.audio) {
+      playPromises.push(item.audio.play().catch(e => console.error('Play error:', e)));
     }
   }
   await Promise.all(playPromises);
@@ -7052,15 +7185,15 @@ async function startSyncPlayback() {
   let maxDuration = 0;
   let longestAudioIndex = -1;
   for (let i = 0; i < syncAudioElements.length; i++) {
-    const audio = syncAudioElements[i];
-    if (audio && audio.duration > maxDuration) {
-      maxDuration = audio.duration;
+    const item = syncAudioElements[i];
+    if (item && item.audio && item.audio.duration > maxDuration) {
+      maxDuration = item.audio.duration;
       longestAudioIndex = i;
     }
   }
 
-  if (longestAudioIndex >= 0 && syncAudioElements[longestAudioIndex]) {
-    syncAudioElements[longestAudioIndex].onended = () => {
+  if (longestAudioIndex >= 0 && syncAudioElements[longestAudioIndex] && syncAudioElements[longestAudioIndex].audio) {
+    syncAudioElements[longestAudioIndex].audio.onended = () => {
       stopSyncPlayback();
     };
   }
@@ -7075,10 +7208,16 @@ function stopSyncPlayback() {
     syncPlaybackInterval = null;
   }
 
-  for (const audio of syncAudioElements) {
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
+  // Save current positions before stopping
+  for (const item of syncAudioElements) {
+    if (item && item.audio && item.audio.duration) {
+      const track = mixingTracks[item.trackIndex];
+      if (track) {
+        const percent = (item.audio.currentTime / item.audio.duration) * 100;
+        trackSeekPositions[track.id] = percent;
+      }
+      item.audio.pause();
+      item.audio.currentTime = 0;
     }
   }
   syncAudioElements = [];
@@ -7090,12 +7229,15 @@ function stopSyncPlayback() {
 function updateSyncPlaybackUI() {
   if (!syncPlaybackActive) return;
 
-  for (let i = 0; i < mixingTracks.length; i++) {
-    const audio = syncAudioElements[i];
-    if (!audio) continue;
+  for (let i = 0; i < syncAudioElements.length; i++) {
+    const item = syncAudioElements[i];
+    if (!item || !item.audio) continue;
 
-    const playhead = document.getElementById(`waveform-playhead-${i}`);
-    const timeDisplay = document.getElementById(`waveform-time-${i}`);
+    const trackIndex = item.trackIndex;
+    const audio = item.audio;
+
+    const playhead = document.getElementById(`waveform-playhead-${trackIndex}`);
+    const timeDisplay = document.getElementById(`waveform-time-${trackIndex}`);
 
     if (playhead && audio.duration) {
       const percent = (audio.currentTime / audio.duration) * 100;
@@ -7114,6 +7256,7 @@ window.renderMixingTracksWaveform = renderMixingTracksWaveform;
 window.playMixingTrackWaveform = playMixingTrackWaveform;
 window.stopMixingTrackWaveform = stopMixingTrackWaveform;
 window.seekMixingTrackWaveform = seekMixingTrackWaveform;
+window.setTrackSeekPosition = setTrackSeekPosition;
 window.toggleSyncPlayback = toggleSyncPlayback;
 window.startSyncPlayback = startSyncPlayback;
 window.stopSyncPlayback = stopSyncPlayback;
@@ -11022,17 +11165,9 @@ function updateModeUI() {
       <h2>믹싱 도구</h2>
       <div class="tool-section">
         <h3>트랙 관리</h3>
-        <button class="tool-btn" data-tool="add-vocal-track">
-          <span class="icon">🎤</span>
-          보컬 트랙 추가
-        </button>
-        <button class="tool-btn" data-tool="add-instrument-track">
-          <span class="icon">🎸</span>
-          반주 트랙 추가
-        </button>
-        <button class="tool-btn" data-tool="add-effect-track">
-          <span class="icon">🔔</span>
-          효과음 트랙 추가
+        <button class="tool-btn" data-tool="add-track">
+          <span class="icon">🎵</span>
+          트랙 추가
         </button>
       </div>
       <div class="tool-section">
