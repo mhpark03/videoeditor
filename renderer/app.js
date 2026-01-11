@@ -6348,8 +6348,16 @@ let selectedMixingTrackFile = null;
 let currentPlayingTrackIndex = -1;
 let mixingTrackAudio = null;
 
+// Synchronized playback state
+let syncPlaybackActive = false;
+let syncAudioElements = [];  // Array of Audio elements for sync playback
+let syncPlaybackInterval = null;
+
 // Storage key for mixing session
 const MIXING_SESSION_KEY = 'kiosk_video_editor_mixing_session';
+
+// Cache for waveform images (used by mixing waveform UI)
+const mixingWaveformCache = new Map();
 
 // Save mixing session to localStorage
 function saveMixingSession() {
@@ -6391,7 +6399,12 @@ function restoreMixingSession() {
   const session = loadMixingSession();
   if (session && session.tracks && session.tracks.length > 0) {
     mixingTracks = session.tracks;
-    renderMixingTracksPreview();
+    // Only render waveform UI in mixing mode
+    if (currentMode === 'mixing') {
+      renderMixingTracksWaveform();
+    } else {
+      renderMixingTracksPreview();
+    }
     return true;
   }
   return false;
@@ -6401,8 +6414,14 @@ function restoreMixingSession() {
 function clearMixingSession() {
   localStorage.removeItem(MIXING_SESSION_KEY);
   mixingTracks = [];
+  mixingWaveformCache.clear();
   stopMixingTrack();
-  renderMixingTracksPreview();
+  // Only render waveform UI in mixing mode
+  if (currentMode === 'mixing') {
+    renderMixingTracksWaveform();
+  } else {
+    renderMixingTracksPreview();
+  }
   alert('저장된 작업이 초기화되었습니다.');
 }
 
@@ -6473,8 +6492,12 @@ function addMixingTrack(trackType) {
   // Auto-save session
   autoSaveMixingSession();
 
-  // Update preview
-  renderMixingTracksPreview();
+  // Update UI based on current mode
+  if (currentMode === 'mixing') {
+    renderMixingTracksWaveform();
+  } else {
+    renderMixingTracksPreview();
+  }
 
   // Show success message
   alert(`"${trackName}" 트랙이 추가되었습니다.\n\n현재 ${mixingTracks.length}개의 트랙이 있습니다.`);
@@ -6492,16 +6515,572 @@ function removeMixingTrack(index) {
       stopMixingTrack();
     }
 
+    // Clear cache for this file
+    mixingWaveformCache.delete(track.file);
+
     mixingTracks.splice(index, 1);
 
     // Auto-save session
     autoSaveMixingSession();
 
-    renderMixingTracksPreview();
+    // Only render waveform UI in mixing mode
+    if (currentMode === 'mixing') {
+      renderMixingTracksWaveform();
+    } else {
+      renderMixingTracksPreview();
+    }
     alert(`"${track.name}" 트랙이 삭제되었습니다.`);
     showPropertyPanel('mix-tracks');
   }
 }
+
+// Render mixing tracks with waveforms in timeline container
+async function renderMixingTracksWaveform() {
+  const timelineContainer = document.querySelector('.timeline-container');
+  if (!timelineContainer) return;
+
+  // Clear existing content
+  timelineContainer.innerHTML = '';
+
+  // Check for saved session if no tracks
+  if (mixingTracks.length === 0) {
+    const savedSession = loadMixingSession();
+    const hasSavedSession = savedSession && savedSession.tracks && savedSession.tracks.length > 0;
+
+    timelineContainer.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 20px;">
+        <p style="color: #888; font-size: 16px;">트랙을 추가하여 믹싱을 시작하세요</p>
+        <p style="color: #666; font-size: 13px; margin-top: 10px;">좌측 메뉴에서 보컬/반주/효과음 트랙을 추가하세요</p>
+        ${hasSavedSession ? `
+          <div style="margin-top: 30px; padding: 20px; background: #2d2d2d; border-radius: 8px; border: 1px solid #667eea; text-align: center;">
+            <p style="color: #667eea; font-size: 14px; margin: 0 0 10px 0;">💾 저장된 작업이 있습니다</p>
+            <p style="color: #888; font-size: 12px; margin: 0 0 15px 0;">${savedSession.tracks.length}개 트랙 | ${new Date(savedSession.savedAt).toLocaleString('ko-KR')}</p>
+            <button onclick="restoreMixingSession(); renderMixingTracksWaveform();" style="background: #667eea; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer; font-size: 13px; font-weight: 600;">
+              📂 이어서 작업하기
+            </button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    return;
+  }
+
+  const selectedCount = mixingTracks.filter(t => t.selected).length;
+  const allSelected = selectedCount === mixingTracks.length;
+  const isSyncPlaying = syncPlaybackActive;
+
+  // Create header
+  const header = document.createElement('div');
+  header.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #3d3d3d; border-radius: 6px; margin: 8px; flex-shrink: 0;';
+  header.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <input type="checkbox" id="select-all-tracks-wf" ${allSelected ? 'checked' : ''} onchange="toggleAllMixingTracks(this.checked); renderMixingTracksWaveform();" style="width: 16px; height: 16px; cursor: pointer;">
+      <span style="color: #e0e0e0; font-size: 13px;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택)</span>
+      <button onclick="toggleSyncPlayback()" style="background: ${isSyncPlaying ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 32px; height: 32px; cursor: ${selectedCount === 0 ? 'not-allowed' : 'pointer'}; font-size: 14px; display: flex; align-items: center; justify-content: center; margin-left: 5px;" ${selectedCount === 0 && !isSyncPlaying ? 'disabled' : ''} title="${isSyncPlaying ? '동기화 재생 정지' : '선택 트랙 동기화 재생'}">
+        ${isSyncPlaying ? '⏹' : '▶'}
+      </button>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button onclick="mixSelectedTracks()" style="background: ${selectedCount === 0 ? '#555' : '#10b981'}; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: ${selectedCount === 0 ? 'not-allowed' : 'pointer'}; font-size: 11px; font-weight: 600;" ${selectedCount === 0 ? 'disabled' : ''}>
+        🎶 믹싱 (${selectedCount})
+      </button>
+      <button onclick="if(confirm('모든 트랙을 삭제하고 작업을 초기화하시겠습니까?')) { clearMixingSession(); renderMixingTracksWaveform(); }" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 11px;" title="작업 초기화">
+        🗑️
+      </button>
+    </div>
+  `;
+  timelineContainer.appendChild(header);
+
+  // Create tracks container
+  const tracksContainer = document.createElement('div');
+  tracksContainer.style.cssText = 'flex: 1; overflow-y: auto; padding: 0 8px 8px 8px;';
+  timelineContainer.appendChild(tracksContainer);
+
+  // Render each track with waveform
+  for (let index = 0; index < mixingTracks.length; index++) {
+    const track = mixingTracks[index];
+    const trackElement = document.createElement('div');
+    trackElement.className = 'mixing-track-waveform-item';
+    trackElement.dataset.index = index;
+    trackElement.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: ${track.selected ? '#2d2d2d' : '#1a1a1a'};
+      border-radius: 6px;
+      margin-bottom: 6px;
+      border: 1px solid ${track.selected ? '#667eea' : '#333'};
+      opacity: ${track.selected ? '1' : '0.5'};
+      height: 65px;
+    `;
+
+    // Checkbox
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = track.selected;
+    checkbox.style.cssText = 'width: 14px; height: 14px; cursor: pointer; flex-shrink: 0;';
+    checkbox.onchange = () => {
+      toggleMixingTrackSelection(index, checkbox.checked);
+      renderMixingTracksWaveform();
+    };
+    trackElement.appendChild(checkbox);
+
+    // Track icon
+    const icon = document.createElement('span');
+    icon.style.cssText = 'font-size: 16px; flex-shrink: 0;';
+    icon.textContent = track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔');
+    trackElement.appendChild(icon);
+
+    // Track name
+    const nameSpan = document.createElement('span');
+    nameSpan.style.cssText = 'color: #e0e0e0; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; flex-shrink: 0;';
+    nameSpan.textContent = track.name;
+    nameSpan.title = track.name;
+    trackElement.appendChild(nameSpan);
+
+    // Waveform container with seek functionality
+    const waveformContainer = document.createElement('div');
+    waveformContainer.style.cssText = 'flex: 1; height: 48px; background: #1a1a1a; border-radius: 4px; position: relative; overflow: hidden; cursor: pointer;';
+
+    // Waveform image
+    const waveformImg = document.createElement('img');
+    waveformImg.id = `waveform-img-${index}`;
+    waveformImg.style.cssText = 'width: 100%; height: 100%; object-fit: fill; display: none;';
+
+    // Loading indicator
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = `waveform-loading-${index}`;
+    loadingDiv.style.cssText = 'position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #666; font-size: 10px;';
+    loadingDiv.textContent = '파형 로딩...';
+
+    // Playhead indicator
+    const playhead = document.createElement('div');
+    playhead.id = `waveform-playhead-${index}`;
+    playhead.style.cssText = 'position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5722; display: none; pointer-events: none;';
+
+    waveformContainer.appendChild(loadingDiv);
+    waveformContainer.appendChild(waveformImg);
+    waveformContainer.appendChild(playhead);
+
+    // Click to seek
+    waveformContainer.onclick = (e) => {
+      const rect = waveformContainer.getBoundingClientRect();
+      const percent = ((e.clientX - rect.left) / rect.width) * 100;
+      seekMixingTrackWaveform(index, percent);
+    };
+
+    trackElement.appendChild(waveformContainer);
+
+    // Time display
+    const timeSpan = document.createElement('span');
+    timeSpan.id = `waveform-time-${index}`;
+    timeSpan.style.cssText = 'color: #888; font-size: 10px; min-width: 35px; text-align: right; flex-shrink: 0;';
+    timeSpan.textContent = '0:00';
+    trackElement.appendChild(timeSpan);
+
+    // Play button
+    const playBtn = document.createElement('button');
+    playBtn.style.cssText = `background: ${currentPlayingTrackIndex === index ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 11px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;`;
+    playBtn.title = currentPlayingTrackIndex === index ? '정지' : '재생';
+    playBtn.textContent = currentPlayingTrackIndex === index ? '⏹' : '▶';
+    playBtn.onclick = () => {
+      playMixingTrackWaveform(index);
+    };
+    trackElement.appendChild(playBtn);
+
+    // Volume slider
+    const volumeSlider = document.createElement('input');
+    volumeSlider.type = 'range';
+    volumeSlider.min = '0';
+    volumeSlider.max = '200';
+    volumeSlider.value = track.volume;
+    volumeSlider.style.cssText = 'width: 50px; height: 4px; cursor: pointer; flex-shrink: 0;';
+    volumeSlider.title = `볼륨: ${track.volume}%`;
+    volumeSlider.onchange = () => {
+      updateMixingTrackVolumeWaveform(index, volumeSlider.value);
+    };
+    trackElement.appendChild(volumeSlider);
+
+    // Delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.style.cssText = 'background: transparent; color: #888; border: none; cursor: pointer; font-size: 14px; padding: 2px; flex-shrink: 0;';
+    deleteBtn.title = '삭제';
+    deleteBtn.textContent = '✕';
+    deleteBtn.onclick = () => {
+      removeMixingTrackWaveform(index);
+    };
+    trackElement.appendChild(deleteBtn);
+
+    tracksContainer.appendChild(trackElement);
+
+    // Load waveform asynchronously
+    loadWaveformForTrack(index, track.file);
+  }
+}
+
+// Load waveform for a track
+async function loadWaveformForTrack(index, filePath) {
+  const waveformImg = document.getElementById(`waveform-img-${index}`);
+  const loadingDiv = document.getElementById(`waveform-loading-${index}`);
+
+  if (!waveformImg || !loadingDiv) return;
+
+  // Check cache first
+  if (mixingWaveformCache.has(filePath)) {
+    waveformImg.src = mixingWaveformCache.get(filePath);
+    waveformImg.style.display = 'block';
+    loadingDiv.style.display = 'none';
+    return;
+  }
+
+  try {
+    const waveformData = await window.electronAPI.generateMixingWaveform(filePath);
+    if (waveformData) {
+      const src = `data:image/png;base64,${waveformData}`;
+      mixingWaveformCache.set(filePath, src);
+      waveformImg.src = src;
+      waveformImg.style.display = 'block';
+      loadingDiv.style.display = 'none';
+    } else {
+      loadingDiv.textContent = '파형 없음';
+    }
+  } catch (error) {
+    console.error('Failed to load waveform:', error);
+    loadingDiv.textContent = '파형 오류';
+  }
+}
+
+// Play track with waveform UI update
+function playMixingTrackWaveform(index) {
+  if (index < 0 || index >= mixingTracks.length) return;
+
+  // If same track is playing, stop it
+  if (currentPlayingTrackIndex === index) {
+    stopMixingTrackWaveform();
+    return;
+  }
+
+  // Stop current track if playing
+  stopMixingTrackWaveform();
+
+  const track = mixingTracks[index];
+
+  // Create audio element and play
+  mixingTrackAudio = new Audio();
+  mixingTrackAudio.volume = track.volume / 100;
+
+  const startPlayback = () => {
+    currentPlayingTrackIndex = index;
+    renderMixingTracksWaveform();
+
+    // Start updating UI
+    mixingTrackUpdateInterval = setInterval(() => {
+      updateWaveformPlaybackUI(index);
+    }, 50);
+  };
+
+  // Try to load and play
+  mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+  mixingTrackAudio.play().then(startPlayback).catch(async (error) => {
+    console.log('Direct file play failed, trying via IPC:', error);
+    try {
+      const audioData = await window.electronAPI.readAudioFile(track.file);
+      if (audioData) {
+        mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
+        await mixingTrackAudio.play();
+        startPlayback();
+      }
+    } catch (e) {
+      console.error('Failed to play track:', e);
+      alert('트랙을 재생할 수 없습니다.');
+    }
+  });
+
+  // When audio ends
+  mixingTrackAudio.onended = () => {
+    stopMixingTrackWaveform();
+  };
+}
+
+// Stop track with waveform UI
+function stopMixingTrackWaveform() {
+  if (mixingTrackUpdateInterval) {
+    clearInterval(mixingTrackUpdateInterval);
+    mixingTrackUpdateInterval = null;
+  }
+  if (mixingTrackAudio) {
+    mixingTrackAudio.pause();
+    mixingTrackAudio.currentTime = 0;
+    mixingTrackAudio = null;
+  }
+  const prevIndex = currentPlayingTrackIndex;
+  currentPlayingTrackIndex = -1;
+
+  // Update only the relevant UI elements
+  if (prevIndex >= 0) {
+    renderMixingTracksWaveform();
+  }
+}
+
+// Update waveform playback UI
+function updateWaveformPlaybackUI(index) {
+  if (!mixingTrackAudio || currentPlayingTrackIndex !== index) return;
+
+  const playhead = document.getElementById(`waveform-playhead-${index}`);
+  const timeDisplay = document.getElementById(`waveform-time-${index}`);
+
+  if (playhead && mixingTrackAudio.duration) {
+    const percent = (mixingTrackAudio.currentTime / mixingTrackAudio.duration) * 100;
+    playhead.style.left = `${percent}%`;
+    playhead.style.display = 'block';
+  }
+
+  if (timeDisplay) {
+    timeDisplay.textContent = formatTrackTime(mixingTrackAudio.currentTime);
+  }
+}
+
+// Seek on waveform click
+function seekMixingTrackWaveform(index, percent) {
+  if (index < 0 || index >= mixingTracks.length) return;
+
+  const track = mixingTracks[index];
+
+  if (currentPlayingTrackIndex === index && mixingTrackAudio && mixingTrackAudio.duration) {
+    const time = (percent / 100) * mixingTrackAudio.duration;
+    mixingTrackAudio.currentTime = time;
+    if (mixingTrackAudio.paused) mixingTrackAudio.play();
+    updateWaveformPlaybackUI(index);
+  } else {
+    // Load and seek
+    stopMixingTrackWaveform();
+
+    mixingTrackAudio = new Audio();
+    mixingTrackAudio.volume = track.volume / 100;
+
+    const setupSeek = () => {
+      if (mixingTrackAudio.duration) {
+        const time = (percent / 100) * mixingTrackAudio.duration;
+        mixingTrackAudio.currentTime = time;
+        currentPlayingTrackIndex = index;
+        mixingTrackAudio.play();
+        renderMixingTracksWaveform();
+
+        mixingTrackUpdateInterval = setInterval(() => {
+          updateWaveformPlaybackUI(index);
+        }, 50);
+      }
+    };
+
+    mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+    mixingTrackAudio.onloadedmetadata = setupSeek;
+    mixingTrackAudio.onerror = async () => {
+      try {
+        const audioData = await window.electronAPI.readAudioFile(track.file);
+        if (audioData) {
+          mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
+          mixingTrackAudio.onloadedmetadata = setupSeek;
+        }
+      } catch (e) {
+        console.error('Failed to load track for seeking:', e);
+      }
+    };
+
+    mixingTrackAudio.onended = () => {
+      stopMixingTrackWaveform();
+    };
+  }
+}
+
+// Update volume with waveform UI
+function updateMixingTrackVolumeWaveform(index, volume) {
+  if (index >= 0 && index < mixingTracks.length) {
+    mixingTracks[index].volume = parseInt(volume);
+
+    if (currentPlayingTrackIndex === index && mixingTrackAudio) {
+      mixingTrackAudio.volume = volume / 100;
+    }
+
+    autoSaveMixingSession();
+  }
+}
+
+// Remove track with waveform UI
+function removeMixingTrackWaveform(index) {
+  if (index >= 0 && index < mixingTracks.length) {
+    const track = mixingTracks[index];
+
+    if (currentPlayingTrackIndex === index) {
+      stopMixingTrackWaveform();
+    }
+
+    // Clear cache for this file
+    mixingWaveformCache.delete(track.file);
+
+    mixingTracks.splice(index, 1);
+    autoSaveMixingSession();
+    renderMixingTracksWaveform();
+    alert(`"${track.name}" 트랙이 삭제되었습니다.`);
+    showPropertyPanel('mix-tracks');
+  }
+}
+
+// Toggle synchronized playback of selected tracks
+function toggleSyncPlayback() {
+  if (syncPlaybackActive) {
+    stopSyncPlayback();
+  } else {
+    startSyncPlayback();
+  }
+}
+
+// Start synchronized playback of all selected tracks
+async function startSyncPlayback() {
+  const selectedTracks = mixingTracks.filter(t => t.selected);
+
+  if (selectedTracks.length === 0) {
+    alert('재생할 트랙을 선택해주세요.');
+    return;
+  }
+
+  // Stop any single track playback first
+  stopMixingTrackWaveform();
+
+  // Clear previous sync audio elements
+  stopSyncPlayback();
+
+  syncPlaybackActive = true;
+  syncAudioElements = [];
+
+  // Create audio elements for each selected track
+  for (let i = 0; i < mixingTracks.length; i++) {
+    const track = mixingTracks[i];
+    if (!track.selected) {
+      syncAudioElements.push(null);  // Placeholder for non-selected tracks
+      continue;
+    }
+
+    const audio = new Audio();
+    audio.volume = track.volume / 100;
+
+    // Try to load the audio file
+    try {
+      audio.src = `file://${track.file.replace(/\\/g, '/')}`;
+      await new Promise((resolve, reject) => {
+        audio.oncanplaythrough = resolve;
+        audio.onerror = async () => {
+          // Fallback: read file via IPC
+          try {
+            const audioData = await window.electronAPI.readAudioFile(track.file);
+            if (audioData) {
+              audio.src = `data:audio/mpeg;base64,${audioData}`;
+              audio.oncanplaythrough = resolve;
+            } else {
+              reject(new Error('Failed to load audio'));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        };
+      });
+    } catch (e) {
+      console.error(`Failed to load track ${track.name}:`, e);
+      syncAudioElements.push(null);
+      continue;
+    }
+
+    syncAudioElements.push(audio);
+  }
+
+  // Start all audio elements simultaneously
+  const playPromises = [];
+  for (const audio of syncAudioElements) {
+    if (audio) {
+      playPromises.push(audio.play().catch(e => console.error('Play error:', e)));
+    }
+  }
+  await Promise.all(playPromises);
+
+  // Update UI
+  renderMixingTracksWaveform();
+
+  // Start interval to update playheads
+  syncPlaybackInterval = setInterval(() => {
+    updateSyncPlaybackUI();
+  }, 50);
+
+  // Handle end of playback (when longest track ends)
+  let maxDuration = 0;
+  let longestAudioIndex = -1;
+  for (let i = 0; i < syncAudioElements.length; i++) {
+    const audio = syncAudioElements[i];
+    if (audio && audio.duration > maxDuration) {
+      maxDuration = audio.duration;
+      longestAudioIndex = i;
+    }
+  }
+
+  if (longestAudioIndex >= 0 && syncAudioElements[longestAudioIndex]) {
+    syncAudioElements[longestAudioIndex].onended = () => {
+      stopSyncPlayback();
+    };
+  }
+}
+
+// Stop synchronized playback
+function stopSyncPlayback() {
+  syncPlaybackActive = false;
+
+  if (syncPlaybackInterval) {
+    clearInterval(syncPlaybackInterval);
+    syncPlaybackInterval = null;
+  }
+
+  for (const audio of syncAudioElements) {
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+  }
+  syncAudioElements = [];
+
+  renderMixingTracksWaveform();
+}
+
+// Update UI during synchronized playback
+function updateSyncPlaybackUI() {
+  if (!syncPlaybackActive) return;
+
+  for (let i = 0; i < mixingTracks.length; i++) {
+    const audio = syncAudioElements[i];
+    if (!audio) continue;
+
+    const playhead = document.getElementById(`waveform-playhead-${i}`);
+    const timeDisplay = document.getElementById(`waveform-time-${i}`);
+
+    if (playhead && audio.duration) {
+      const percent = (audio.currentTime / audio.duration) * 100;
+      playhead.style.left = `${percent}%`;
+      playhead.style.display = 'block';
+    }
+
+    if (timeDisplay) {
+      timeDisplay.textContent = formatTrackTime(audio.currentTime);
+    }
+  }
+}
+
+// Expose waveform functions to window for event handlers
+window.renderMixingTracksWaveform = renderMixingTracksWaveform;
+window.playMixingTrackWaveform = playMixingTrackWaveform;
+window.stopMixingTrackWaveform = stopMixingTrackWaveform;
+window.seekMixingTrackWaveform = seekMixingTrackWaveform;
+window.toggleSyncPlayback = toggleSyncPlayback;
+window.startSyncPlayback = startSyncPlayback;
+window.stopSyncPlayback = stopSyncPlayback;
+window.updateMixingTrackVolumeWaveform = updateMixingTrackVolumeWaveform;
+window.removeMixingTrackWaveform = removeMixingTrackWaveform;
 
 function renderMixingTracksPreview() {
   const placeholder = document.getElementById('preview-placeholder');
@@ -6838,7 +7417,10 @@ function toggleMixingTrackSelection(index, selected) {
   if (index >= 0 && index < mixingTracks.length) {
     mixingTracks[index].selected = selected;
     autoSaveMixingSession();
-    renderMixingTracksPreview();
+    // Don't call renderMixingTracksPreview in mixing mode - UI is handled by waveform renderer
+    if (currentMode !== 'mixing') {
+      renderMixingTracksPreview();
+    }
   }
 }
 
@@ -6847,7 +7429,10 @@ function toggleAllMixingTracks(selected) {
     track.selected = selected;
   });
   autoSaveMixingSession();
-  renderMixingTracksPreview();
+  // Don't call renderMixingTracksPreview in mixing mode - UI is handled by waveform renderer
+  if (currentMode !== 'mixing') {
+    renderMixingTracksPreview();
+  }
 }
 
 async function mixSelectedTracks() {
@@ -10503,6 +11088,34 @@ function updateModeUI() {
   // Re-setup tool buttons after updating sidebar
   setupToolButtons();
 
+  // Handle preview/timeline containers based on mode
+  const previewContainer = document.querySelector('.preview-container');
+  const timelineContainer = document.querySelector('.timeline-container');
+
+  if (currentMode === 'mixing') {
+    // Hide preview container completely in mixing mode
+    if (previewContainer) {
+      previewContainer.style.display = 'none';
+    }
+    // Show timeline container for waveform tracks
+    if (timelineContainer) {
+      timelineContainer.style.display = 'flex';
+      timelineContainer.style.flexDirection = 'column';
+      timelineContainer.style.flex = '1';
+    }
+    // Render mixing tracks with waveforms
+    renderMixingTracksWaveform();
+  } else {
+    // Show preview and timeline in non-mixing modes
+    if (previewContainer) {
+      previewContainer.style.display = '';
+    }
+    if (timelineContainer) {
+      timelineContainer.style.display = '';
+      timelineContainer.style.flex = '';
+    }
+  }
+
   // Update placeholder text based on mode
   const placeholderP = document.querySelector('#preview-placeholder p');
   const importBtn = document.getElementById('import-video-btn');
@@ -10513,11 +11126,6 @@ function updateModeUI() {
       importBtn.style.display = 'block';
     } else if (currentMode === 'mixing') {
       importBtn.style.display = 'none'; // 믹싱 모드에서는 가져오기 버튼 숨김
-      // Hide timeline in mixing mode
-      const timelineContainer = document.querySelector('.timeline-container');
-      if (timelineContainer) timelineContainer.style.display = 'none';
-      // Render mixing tracks in the preview area
-      renderMixingTracksPreview();
     } else if (currentMode === 'tts') {
       placeholderP.textContent = 'TTS 음성 생성 모드';
       importBtn.style.display = 'none'; // TTS 모드에서는 가져오기 버튼 숨김
@@ -10525,12 +11133,6 @@ function updateModeUI() {
       placeholderP.textContent = '영상을 가져와주세요';
       importBtn.textContent = '📁 영상 선택';
       importBtn.style.display = 'block';
-    }
-
-    // Show timeline in non-mixing modes
-    if (currentMode !== 'mixing') {
-      const timelineContainer = document.querySelector('.timeline-container');
-      if (timelineContainer) timelineContainer.style.display = '';
     }
   }
 

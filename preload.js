@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateWaveform: (videoPath) => ipcRenderer.invoke('generate-waveform', videoPath),
   generateWaveformRange: (options) => ipcRenderer.invoke('generate-waveform-range', options),
   generateWaveformFromUrl: (videoUrl) => ipcRenderer.invoke('generate-waveform-from-url', videoUrl),
+  generateMixingWaveform: (audioPath) => ipcRenderer.invoke('generate-mixing-waveform', audioPath),
 
   // Video operations
   trimVideo: (options) => ipcRenderer.invoke('trim-video', options),

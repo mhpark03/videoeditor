@@ -756,6 +756,72 @@ ipcMain.handle('generate-waveform-range', async (event, options) => {
   });
 });
 
+// Generate compact waveform for mixing track
+ipcMain.handle('generate-mixing-waveform', async (event, audioPath) => {
+  logInfo('MIXING_WAVEFORM_START', 'Generating compact waveform for mixing track', { audioPath });
+
+  const path = require('path');
+  const os = require('os');
+
+  // Create temp file path for waveform image
+  const tempDir = os.tmpdir();
+  const waveformPath = path.join(tempDir, `mixing_waveform_${Date.now()}.png`);
+
+  return new Promise((resolve, reject) => {
+    // Generate compact waveform (width: 1200px, height: 48px, single channel)
+    const args = [
+      '-i', audioPath,
+      '-filter_complex',
+      '[0:a]showwavespic=s=1200x48:colors=#667eea:draw=full:scale=lin[wave]',
+      '-map', '[wave]',
+      '-frames:v', '1',
+      '-y',
+      waveformPath
+    ];
+
+    const ffmpeg = spawn(ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+    let errorOutput = '';
+
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString('utf8');
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        try {
+          // Read the generated PNG and convert to base64 (without data URI prefix)
+          const imageBuffer = fs.readFileSync(waveformPath);
+          const base64Image = imageBuffer.toString('base64');
+
+          // Clean up temp file
+          try {
+            fs.unlinkSync(waveformPath);
+          } catch (cleanupErr) {
+            logError('MIXING_WAVEFORM_CLEANUP', 'Failed to delete temp waveform file', { error: cleanupErr.message });
+          }
+
+          logInfo('MIXING_WAVEFORM_SUCCESS', 'Mixing waveform generated', { length: base64Image.length });
+          resolve(base64Image);
+        } catch (readErr) {
+          logError('MIXING_WAVEFORM_READ_FAILED', 'Failed to read waveform file', { error: readErr.message });
+          reject(new Error(`Failed to read waveform: ${readErr.message}`));
+        }
+      } else {
+        logError('MIXING_WAVEFORM_FAILED', 'Waveform generation failed', { error: errorOutput });
+        reject(new Error(errorOutput || 'FFmpeg waveform generation failed'));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      logError('MIXING_WAVEFORM_FAILED', 'FFmpeg spawn error', { error: err.message });
+      reject(new Error(`FFmpeg error: ${err.message}`));
+    });
+  });
+});
+
 // Generate waveform from URL (download first, then generate)
 ipcMain.handle('generate-waveform-from-url', async (event, videoUrl) => {
   logInfo('WAVEFORM_URL_START', 'Generating waveform from URL', { videoUrl });
