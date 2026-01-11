@@ -1119,6 +1119,10 @@ function showToolProperties(tool) {
             <div style="color: #e0e0e0; font-size: 14px;" id="selected-track-name"></div>
           </div>
         </div>
+        <div class="property-group" id="track-name-group" style="display: none;">
+          <label>트랙 이름</label>
+          <input type="text" id="track-custom-name" placeholder="트랙 이름을 입력하세요" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+        </div>
         <div class="property-group" id="track-volume-group" style="display: none;">
           <label>볼륨 <span id="track-volume-value">100</span>%</label>
           <input type="range" id="track-volume" min="0" max="200" value="100" oninput="document.getElementById('track-volume-value').textContent = this.value">
@@ -6341,6 +6345,8 @@ async function executeAudioTuning() {
 
 // Temporary storage for selected track file
 let selectedMixingTrackFile = null;
+let currentPlayingTrackIndex = -1;
+let mixingTrackAudio = null;
 
 async function selectMixingTrack(trackType) {
   try {
@@ -6348,10 +6354,13 @@ async function selectMixingTrack(trackType) {
     if (filePath) {
       selectedMixingTrackFile = filePath;
       const fileName = filePath.split('\\').pop().split('/').pop();
+      const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
 
       // Show file info and enable add button
       const trackInfo = document.getElementById('selected-track-info');
       const trackName = document.getElementById('selected-track-name');
+      const trackNameGroup = document.getElementById('track-name-group');
+      const trackCustomName = document.getElementById('track-custom-name');
       const volumeGroup = document.getElementById('track-volume-group');
       const delayGroup = document.getElementById('track-delay-group');
       const addBtn = document.getElementById('add-track-btn');
@@ -6359,6 +6368,8 @@ async function selectMixingTrack(trackType) {
       if (trackInfo && trackName && addBtn) {
         trackName.textContent = `📄 ${fileName}`;
         trackInfo.style.display = 'block';
+        if (trackNameGroup) trackNameGroup.style.display = 'block';
+        if (trackCustomName) trackCustomName.value = fileNameWithoutExt;
         if (volumeGroup) volumeGroup.style.display = 'block';
         if (delayGroup) delayGroup.style.display = 'block';
         addBtn.style.display = 'block';
@@ -6378,14 +6389,16 @@ function addMixingTrack(trackType) {
 
   const volume = parseInt(document.getElementById('track-volume')?.value || 100);
   const delay = parseFloat(document.getElementById('track-delay')?.value || 0);
+  const customName = document.getElementById('track-custom-name')?.value?.trim();
   const fileName = selectedMixingTrackFile.split('\\').pop().split('/').pop();
+  const trackName = customName || fileName.replace(/\.[^/.]+$/, '');
 
   // Add track to mixing tracks array
   mixingTracks.push({
     id: Date.now(),
     type: trackType,
     file: selectedMixingTrackFile,
-    name: fileName,
+    name: trackName,
     volume: volume,
     delay: delay
   });
@@ -6393,8 +6406,11 @@ function addMixingTrack(trackType) {
   // Reset selected file
   selectedMixingTrackFile = null;
 
+  // Update preview
+  renderMixingTracksPreview();
+
   // Show success message
-  alert(`${trackType === 'vocal' ? '보컬' : (trackType === 'instrument' ? '반주' : '효과음')} 트랙이 추가되었습니다.\n\n현재 ${mixingTracks.length}개의 트랙이 있습니다.`);
+  alert(`"${trackName}" 트랙이 추가되었습니다.\n\n현재 ${mixingTracks.length}개의 트랙이 있습니다.`);
 
   // Go to mix-tracks view
   showPropertyPanel('mix-tracks');
@@ -6403,9 +6419,147 @@ function addMixingTrack(trackType) {
 function removeMixingTrack(index) {
   if (index >= 0 && index < mixingTracks.length) {
     const track = mixingTracks[index];
+
+    // Stop if currently playing
+    if (currentPlayingTrackIndex === index) {
+      stopMixingTrack();
+    }
+
     mixingTracks.splice(index, 1);
+    renderMixingTracksPreview();
     alert(`"${track.name}" 트랙이 삭제되었습니다.`);
     showPropertyPanel('mix-tracks');
+  }
+}
+
+function renderMixingTracksPreview() {
+  const placeholder = document.getElementById('preview-placeholder');
+  const previewContainer = document.getElementById('video-preview');
+
+  if (!previewContainer) return;
+
+  if (mixingTracks.length === 0) {
+    // Show empty state
+    if (placeholder) {
+      placeholder.style.display = 'flex';
+      placeholder.innerHTML = `
+        <p style="color: #888; font-size: 16px;">트랙을 추가하여 믹싱을 시작하세요</p>
+        <p style="color: #666; font-size: 13px; margin-top: 10px;">좌측 메뉴에서 보컬/반주/효과음 트랙을 추가하세요</p>
+      `;
+    }
+    return;
+  }
+
+  // Hide placeholder and show track list
+  if (placeholder) {
+    placeholder.style.display = 'flex';
+    placeholder.style.flexDirection = 'column';
+    placeholder.style.alignItems = 'stretch';
+    placeholder.style.justifyContent = 'flex-start';
+    placeholder.style.padding = '20px';
+    placeholder.style.overflowY = 'auto';
+
+    placeholder.innerHTML = `
+      <div style="margin-bottom: 15px; text-align: center;">
+        <h3 style="color: #e0e0e0; margin: 0 0 5px 0;">🎚️ 믹싱 트랙 목록</h3>
+        <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙</p>
+      </div>
+      <div id="mixing-preview-tracks" style="flex: 1; overflow-y: auto;">
+        ${mixingTracks.map((track, index) => `
+          <div class="mixing-track-item" style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #2d2d2d; border-radius: 8px; margin-bottom: 10px; border: 1px solid #3d3d3d;">
+            <span style="font-size: 24px;">${track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔')}</span>
+            <div style="flex: 1; min-width: 0;">
+              <div style="color: #e0e0e0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${track.name}</div>
+              <div style="color: #888; font-size: 11px; margin-top: 2px;">${track.type === 'vocal' ? '보컬' : (track.type === 'instrument' ? '반주' : '효과음')} | +${track.delay}초</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button onclick="playMixingTrack(${index})" style="background: ${currentPlayingTrackIndex === index ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; font-size: 14px;" title="${currentPlayingTrackIndex === index ? '정지' : '재생'}">
+                ${currentPlayingTrackIndex === index ? '⏹' : '▶'}
+              </button>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
+                <input type="range" min="0" max="200" value="${track.volume}"
+                  onchange="updateMixingTrackVolume(${index}, this.value)"
+                  style="width: 80px; height: 4px; cursor: pointer;"
+                  title="볼륨: ${track.volume}%">
+                <span style="color: #aaa; font-size: 10px;">${track.volume}%</span>
+              </div>
+              <button onclick="removeMixingTrack(${index})" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px;" title="삭제">✕</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+}
+
+function playMixingTrack(index) {
+  if (index < 0 || index >= mixingTracks.length) return;
+
+  // If same track is playing, stop it
+  if (currentPlayingTrackIndex === index) {
+    stopMixingTrack();
+    return;
+  }
+
+  // Stop current track if playing
+  stopMixingTrack();
+
+  const track = mixingTracks[index];
+
+  // Create audio element and play
+  mixingTrackAudio = new Audio();
+  mixingTrackAudio.volume = track.volume / 100;
+
+  // Try to load and play
+  mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+  mixingTrackAudio.play().then(() => {
+    currentPlayingTrackIndex = index;
+    renderMixingTracksPreview();
+  }).catch(async (error) => {
+    console.log('Direct file play failed, trying via IPC:', error);
+    // Fallback: read file via IPC
+    try {
+      const audioData = await window.electronAPI.readAudioFile(track.file);
+      if (audioData) {
+        mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
+        await mixingTrackAudio.play();
+        currentPlayingTrackIndex = index;
+        renderMixingTracksPreview();
+      }
+    } catch (e) {
+      console.error('Failed to play track:', e);
+      alert('트랙을 재생할 수 없습니다.');
+    }
+  });
+
+  // When audio ends
+  mixingTrackAudio.onended = () => {
+    currentPlayingTrackIndex = -1;
+    renderMixingTracksPreview();
+  };
+}
+
+function stopMixingTrack() {
+  if (mixingTrackAudio) {
+    mixingTrackAudio.pause();
+    mixingTrackAudio.currentTime = 0;
+    mixingTrackAudio = null;
+  }
+  currentPlayingTrackIndex = -1;
+  renderMixingTracksPreview();
+}
+
+function updateMixingTrackVolume(index, volume) {
+  if (index >= 0 && index < mixingTracks.length) {
+    mixingTracks[index].volume = parseInt(volume);
+
+    // Update playing audio volume if this track is playing
+    if (currentPlayingTrackIndex === index && mixingTrackAudio) {
+      mixingTrackAudio.volume = volume / 100;
+    }
+
+    // Update the display
+    renderMixingTracksPreview();
   }
 }
 
@@ -6414,6 +6568,9 @@ async function executeMixTracks() {
     alert('먼저 트랙을 추가해주세요.');
     return;
   }
+
+  // Stop any playing track
+  stopMixingTrack();
 
   const masterVolume = parseInt(document.getElementById('master-volume')?.value || 100);
   const outputFormat = document.getElementById('mix-output-format')?.value || 'mp3';
@@ -6446,6 +6603,7 @@ async function executeMixTracks() {
       // Ask if user wants to clear tracks
       if (confirm('트랙 목록을 초기화하시겠습니까?')) {
         mixingTracks = [];
+        renderMixingTracksPreview();
         showPropertyPanel('mix-tracks');
       }
     } else {
@@ -6462,6 +6620,10 @@ window.selectMixingTrack = selectMixingTrack;
 window.addMixingTrack = addMixingTrack;
 window.removeMixingTrack = removeMixingTrack;
 window.executeMixTracks = executeMixTracks;
+window.playMixingTrack = playMixingTrack;
+window.stopMixingTrack = stopMixingTrack;
+window.updateMixingTrackVolume = updateMixingTrackVolume;
+window.renderMixingTracksPreview = renderMixingTracksPreview;
 
 // Export dialog
 function showExportDialog() {
@@ -10059,8 +10221,9 @@ function updateModeUI() {
       importBtn.textContent = '🎵 음성 선택';
       importBtn.style.display = 'block';
     } else if (currentMode === 'mixing') {
-      placeholderP.textContent = '트랙을 추가하여 믹싱을 시작하세요';
       importBtn.style.display = 'none'; // 믹싱 모드에서는 가져오기 버튼 숨김
+      // Render mixing tracks in the preview area
+      renderMixingTracksPreview();
     } else if (currentMode === 'tts') {
       placeholderP.textContent = 'TTS 음성 생성 모드';
       importBtn.style.display = 'none'; // TTS 모드에서는 가져오기 버튼 숨김
