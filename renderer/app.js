@@ -1153,10 +1153,55 @@ function showToolProperties(tool) {
             <option value="flac">FLAC (무손실 압축)</option>
           </select>
         </div>
+        <hr style="border: none; border-top: 1px solid #444; margin: 15px 0;">
+        <div class="property-group">
+          <label>노이즈 제거</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+            <input type="checkbox" id="mix-noise-removal" checked>
+            <span style="color: #aaa; font-size: 12px;">배경 노이즈 제거</span>
+          </div>
+          <div style="margin-top: 8px;">
+            <label style="font-size: 12px; color: #888;">강도 <span id="noise-strength-value">25</span></label>
+            <input type="range" id="mix-noise-strength" min="0" max="100" value="25" oninput="document.getElementById('noise-strength-value').textContent = this.value" style="width: 100%;">
+          </div>
+        </div>
+        <div class="property-group">
+          <label>노멀라이제이션</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+            <input type="checkbox" id="mix-normalization" checked>
+            <span style="color: #aaa; font-size: 12px;">음량 균일화 (라우드니스 표준화)</span>
+          </div>
+          <select id="mix-lufs-level" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0; margin-top: 8px;">
+            <option value="-14" selected>음원 등록 (-14 LUFS)</option>
+            <option value="-16">방송용 (-16 LUFS)</option>
+            <option value="-23">유럽 방송 (-23 LUFS)</option>
+          </select>
+        </div>
+        <div class="property-group">
+          <label>EQ 프리셋</label>
+          <select id="mix-eq-preset" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+            <option value="none">없음</option>
+            <option value="vocal" selected>보컬 강조</option>
+            <option value="bass">저음 강조</option>
+            <option value="bright">고음 강조</option>
+            <option value="warm">따뜻한 톤</option>
+          </select>
+        </div>
+        <div class="property-group">
+          <label>추가 옵션</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+            <input type="checkbox" id="mix-compressor">
+            <span style="color: #aaa; font-size: 12px;">다이나믹 컴프레서 (음량 편차 줄이기)</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+            <input type="checkbox" id="mix-highpass" checked>
+            <span style="color: #aaa; font-size: 12px;">하이패스 필터 (저주파 노이즈 제거)</span>
+          </div>
+        </div>
         <button class="property-btn" onclick="executeMixTracks()">🎶 믹싱 실행</button>
         ` : ''}
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 15px;">
-          <small style="color: #aaa;">💡 좌측 메뉴에서 보컬/반주/효과음 트랙을 추가한 후 믹싱하세요.</small>
+          <small style="color: #aaa;">💡 트랙을 추가한 후 옵션을 설정하고 믹싱하세요.</small>
         </div>
       `;
 
@@ -1182,7 +1227,7 @@ function showToolProperties(tool) {
         return;
       }
       // Show mix-tracks panel with export ready
-      showPropertyPanel('mix-tracks');
+      selectTool('mix-tracks');
       return;
 
     case 'quality':
@@ -6490,7 +6535,7 @@ function addMixingTrack() {
   alert(`"${trackName}" 트랙이 추가되었습니다.\n\n현재 ${mixingTracks.length}개의 트랙이 있습니다.`);
 
   // Go to mix-tracks view
-  showPropertyPanel('mix-tracks');
+  selectTool('mix-tracks');
 }
 
 function removeMixingTrack(index) {
@@ -6517,7 +6562,7 @@ function removeMixingTrack(index) {
       renderMixingTracksPreview();
     }
     alert(`"${track.name}" 트랙이 삭제되었습니다.`);
-    showPropertyPanel('mix-tracks');
+    selectTool('mix-tracks');
   }
 }
 
@@ -7082,7 +7127,7 @@ function removeMixingTrackWaveform(index) {
     autoSaveMixingSession();
     renderMixingTracksWaveform();
     alert(`"${track.name}" 트랙이 삭제되었습니다.`);
-    showPropertyPanel('mix-tracks');
+    selectTool('mix-tracks');
   }
 }
 
@@ -7554,9 +7599,18 @@ async function executeMixTracks() {
   const masterVolume = parseInt(document.getElementById('master-volume')?.value || 100);
   const outputFormat = document.getElementById('mix-output-format')?.value || 'mp3';
 
+  // Collect tuning options
+  const noiseRemoval = document.getElementById('mix-noise-removal')?.checked || false;
+  const noiseStrength = parseInt(document.getElementById('mix-noise-strength')?.value || 25);
+  const normalization = document.getElementById('mix-normalization')?.checked || false;
+  const lufsLevel = parseInt(document.getElementById('mix-lufs-level')?.value || -14);
+  const eqPreset = document.getElementById('mix-eq-preset')?.value || 'none';
+  const compressor = document.getElementById('mix-compressor')?.checked || false;
+  const highpass = document.getElementById('mix-highpass')?.checked || false;
+
   // Select output path
   const defaultName = `mixed_audio_${Date.now()}.${outputFormat}`;
-  const outputPath = await window.electronAPI.selectAudioSavePath(defaultName);
+  const outputPath = await window.electronAPI.selectOutput(defaultName);
   if (!outputPath) return;
 
   showProgress();
@@ -7567,11 +7621,21 @@ async function executeMixTracks() {
       tracks: mixingTracks.map(t => ({
         file: t.file,
         volume: t.volume,
-        delay: t.delay
+        delay: t.delay || 0
       })),
       masterVolume,
       outputFormat,
-      outputPath
+      outputPath,
+      // Tuning options
+      tuning: {
+        noiseRemoval,
+        noiseStrength,
+        normalization,
+        lufsLevel,
+        eqPreset,
+        compressor,
+        highpass
+      }
     });
 
     hideProgress();
@@ -7583,7 +7647,7 @@ async function executeMixTracks() {
       if (confirm('트랙 목록을 초기화하시겠습니까?')) {
         mixingTracks = [];
         renderMixingTracksPreview();
-        showPropertyPanel('mix-tracks');
+        selectTool('mix-tracks');
       }
     } else {
       throw new Error(result.error || '믹싱에 실패했습니다.');
@@ -7632,7 +7696,7 @@ async function mixSelectedTracks() {
 
   // Select output path
   const defaultName = `mixed_audio_${Date.now()}.${outputFormat}`;
-  const outputPath = await window.electronAPI.selectAudioSavePath(defaultName);
+  const outputPath = await window.electronAPI.selectOutput(defaultName);
   if (!outputPath) return;
 
   showProgress();
@@ -11175,13 +11239,6 @@ function updateModeUI() {
         <button class="tool-btn" data-tool="mix-tracks">
           <span class="icon">🎚️</span>
           트랙 믹싱
-        </button>
-      </div>
-      <div class="tool-section">
-        <h3>내보내기</h3>
-        <button class="tool-btn export-btn" data-tool="export-mix">
-          <span class="icon">💾</span>
-          믹싱 내보내기
         </button>
       </div>
     `;

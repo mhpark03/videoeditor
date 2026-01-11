@@ -3652,13 +3652,14 @@ ipcMain.handle('audio-tuning', async (event, options) => {
 
 // Mix multiple audio tracks
 ipcMain.handle('mix-audio-tracks', async (event, options) => {
-  const { tracks, masterVolume, outputFormat, outputPath } = options;
+  const { tracks, masterVolume, outputFormat, outputPath, tuning } = options;
 
   logInfo('MIX_AUDIO_TRACKS_START', 'Starting audio mixing', {
     trackCount: tracks.length,
     masterVolume,
     outputFormat,
-    outputPath
+    outputPath,
+    tuning
   });
 
   if (!tracks || tracks.length === 0) {
@@ -3702,12 +3703,69 @@ ipcMain.handle('mix-audio-tracks', async (event, options) => {
   // Apply master volume
   const masterVolumeMultiplier = (masterVolume || 100) / 100;
 
+  // Build post-mix filters based on tuning options
+  const postFilters = [];
+
+  if (tuning) {
+    // High-pass filter (low frequency noise removal) - 80Hz cutoff
+    if (tuning.highpass) {
+      postFilters.push('highpass=f=80');
+    }
+
+    // Noise removal using afftdn filter
+    if (tuning.noiseRemoval) {
+      const noiseReduction = Math.min(tuning.noiseStrength || 25, 97); // afftdn nr range: 0.01-97
+      postFilters.push(`afftdn=nf=-25:nr=${noiseReduction}:nt=w`);
+    }
+
+    // EQ presets
+    if (tuning.eqPreset && tuning.eqPreset !== 'none') {
+      switch (tuning.eqPreset) {
+        case 'vocal':
+          // Boost presence (2-4kHz) and clarity (6-8kHz), reduce mud (200-400Hz)
+          postFilters.push('equalizer=f=300:t=q:w=1:g=-2,equalizer=f=3000:t=q:w=1:g=3,equalizer=f=7000:t=q:w=1:g=2');
+          break;
+        case 'bass':
+          // Boost low frequencies
+          postFilters.push('equalizer=f=60:t=q:w=1:g=4,equalizer=f=120:t=q:w=1:g=3');
+          break;
+        case 'bright':
+          // Boost high frequencies
+          postFilters.push('equalizer=f=8000:t=q:w=1:g=4,equalizer=f=12000:t=q:w=1:g=3');
+          break;
+        case 'warm':
+          // Boost low-mids, reduce highs slightly
+          postFilters.push('equalizer=f=200:t=q:w=1:g=2,equalizer=f=800:t=q:w=1:g=1,equalizer=f=10000:t=q:w=1:g=-2');
+          break;
+      }
+    }
+
+    // Dynamic compressor
+    if (tuning.compressor) {
+      postFilters.push('acompressor=threshold=-20dB:ratio=4:attack=5:release=50:makeup=2');
+    }
+
+    // Loudness normalization (LUFS)
+    if (tuning.normalization) {
+      const targetLufs = tuning.lufsLevel || -14;
+      postFilters.push(`loudnorm=I=${targetLufs}:TP=-1.5:LRA=11`);
+    }
+  }
+
   // Build filter complex
   let filterComplex = '';
   if (inputFilters.length > 0) {
     filterComplex = inputFilters.join(';') + ';';
   }
-  filterComplex += `${mixInputs.join('')}amix=inputs=${tracks.length}:duration=longest:normalize=0,volume=${masterVolumeMultiplier}[out]`;
+
+  // Add amix and post-processing filters
+  let mixOutput = `${mixInputs.join('')}amix=inputs=${tracks.length}:duration=longest:normalize=0,volume=${masterVolumeMultiplier}`;
+
+  if (postFilters.length > 0) {
+    mixOutput += ',' + postFilters.join(',');
+  }
+
+  filterComplex += mixOutput + '[out]';
 
   args.push('-filter_complex', filterComplex);
   args.push('-map', '[out]');
