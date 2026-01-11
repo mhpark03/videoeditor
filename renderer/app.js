@@ -6400,7 +6400,8 @@ function addMixingTrack(trackType) {
     file: selectedMixingTrackFile,
     name: trackName,
     volume: volume,
-    delay: delay
+    delay: delay,
+    selected: true  // Default to selected
   });
 
   // Reset selected file
@@ -6459,14 +6460,25 @@ function renderMixingTracksPreview() {
     placeholder.style.padding = '20px';
     placeholder.style.overflowY = 'auto';
 
+    const selectedCount = mixingTracks.filter(t => t.selected).length;
+    const allSelected = selectedCount === mixingTracks.length;
+
     placeholder.innerHTML = `
       <div style="margin-bottom: 15px; text-align: center;">
         <h3 style="color: #e0e0e0; margin: 0 0 5px 0;">🎚️ 믹싱 트랙 목록</h3>
-        <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙</p>
+        <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택됨)</p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #3d3d3d; border-radius: 6px; margin-bottom: 10px;">
+        <input type="checkbox" id="select-all-tracks" ${allSelected ? 'checked' : ''} onchange="toggleAllMixingTracks(this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
+        <label for="select-all-tracks" style="color: #e0e0e0; font-size: 13px; cursor: pointer; flex: 1;">전체 선택</label>
+        <button onclick="mixSelectedTracks()" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 600;" ${selectedCount === 0 ? 'disabled style="background: #555; cursor: not-allowed;"' : ''}>
+          🎶 선택 믹싱 (${selectedCount})
+        </button>
       </div>
       <div id="mixing-preview-tracks" style="flex: 1; overflow-y: auto;">
         ${mixingTracks.map((track, index) => `
-          <div class="mixing-track-item" style="display: flex; align-items: center; gap: 10px; padding: 12px; background: #2d2d2d; border-radius: 8px; margin-bottom: 10px; border: 1px solid #3d3d3d;">
+          <div class="mixing-track-item" style="display: flex; align-items: center; gap: 10px; padding: 12px; background: ${track.selected ? '#2d2d2d' : '#1a1a1a'}; border-radius: 8px; margin-bottom: 10px; border: 1px solid ${track.selected ? '#667eea' : '#3d3d3d'}; opacity: ${track.selected ? '1' : '0.6'};">
+            <input type="checkbox" ${track.selected ? 'checked' : ''} onchange="toggleMixingTrackSelection(${index}, this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
             <span style="font-size: 24px;">${track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔')}</span>
             <div style="flex: 1; min-width: 0;">
               <div style="color: #e0e0e0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${track.name}</div>
@@ -6615,6 +6627,67 @@ async function executeMixTracks() {
   }
 }
 
+function toggleMixingTrackSelection(index, selected) {
+  if (index >= 0 && index < mixingTracks.length) {
+    mixingTracks[index].selected = selected;
+    renderMixingTracksPreview();
+  }
+}
+
+function toggleAllMixingTracks(selected) {
+  mixingTracks.forEach(track => {
+    track.selected = selected;
+  });
+  renderMixingTracksPreview();
+}
+
+async function mixSelectedTracks() {
+  const selectedTracks = mixingTracks.filter(t => t.selected);
+
+  if (selectedTracks.length === 0) {
+    alert('믹싱할 트랙을 선택해주세요.');
+    return;
+  }
+
+  // Stop any playing track
+  stopMixingTrack();
+
+  const masterVolume = 100; // Default master volume for quick mix
+  const outputFormat = 'mp3';
+
+  // Select output path
+  const defaultName = `mixed_audio_${Date.now()}.${outputFormat}`;
+  const outputPath = await window.electronAPI.selectAudioSavePath(defaultName);
+  if (!outputPath) return;
+
+  showProgress();
+  updateProgress(0, '선택된 트랙 믹싱 중...');
+
+  try {
+    const result = await window.electronAPI.mixAudioTracks({
+      tracks: selectedTracks.map(t => ({
+        file: t.file,
+        volume: t.volume,
+        delay: t.delay
+      })),
+      masterVolume,
+      outputFormat,
+      outputPath
+    });
+
+    hideProgress();
+
+    if (result.success) {
+      alert(`믹싱 완료!\n\n저장 위치: ${result.outputPath}\n\n${selectedTracks.length}개 트랙이 믹싱되었습니다.`);
+    } else {
+      throw new Error(result.error || '믹싱에 실패했습니다.');
+    }
+  } catch (error) {
+    hideProgress();
+    handleError('선택 트랙 믹싱', error, '트랙 믹싱에 실패했습니다.');
+  }
+}
+
 // Expose mixing functions globally
 window.selectMixingTrack = selectMixingTrack;
 window.addMixingTrack = addMixingTrack;
@@ -6624,6 +6697,9 @@ window.playMixingTrack = playMixingTrack;
 window.stopMixingTrack = stopMixingTrack;
 window.updateMixingTrackVolume = updateMixingTrackVolume;
 window.renderMixingTracksPreview = renderMixingTracksPreview;
+window.toggleMixingTrackSelection = toggleMixingTrackSelection;
+window.toggleAllMixingTracks = toggleAllMixingTracks;
+window.mixSelectedTracks = mixSelectedTracks;
 
 // Export dialog
 function showExportDialog() {
