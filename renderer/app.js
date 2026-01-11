@@ -257,6 +257,7 @@ window.executeFilter = function() { return executeFilter(); };
 window.executeAddText = function() { return executeAddText(); };
 window.executeSpeed = function() { return executeSpeed(); };
 window.executeAudioSpeed = function() { return executeAudioSpeed(); };
+window.executeAudioTuning = function() { return executeAudioTuning(); };
 window.executeApplyQuality = function() { return executeApplyQuality(); };
 window.executeExportVideoToS3 = function() { return executeExportVideoToS3(); };
 window.executeExtractFrames = function() { return executeExtractFrames(); };
@@ -999,6 +1000,67 @@ function showToolProperties(tool) {
           <button class="property-btn secondary" onclick="stopAudioSpeedPreview()" style="flex: 1;">⏹️ 중지</button>
         </div>
         <button class="property-btn" onclick="executeAudioSpeed()">속도 적용</button>
+      `;
+      break;
+
+    case 'audio-tuning':
+      if (!currentAudioFile) {
+        alert('먼저 음성 파일을 가져와주세요.');
+        return;
+      }
+
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>노이즈 제거</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="tuning-noise-reduction" checked>
+            <span style="color: #aaa; font-size: 13px;">배경 노이즈 제거</span>
+          </div>
+          <div style="margin-top: 8px;">
+            <label style="font-size: 12px; color: #888;">강도 <span id="noise-level-value">25</span></label>
+            <input type="range" id="tuning-noise-level" min="5" max="50" value="25" oninput="document.getElementById('noise-level-value').textContent = this.value">
+          </div>
+        </div>
+        <div class="property-group">
+          <label>노멀라이제이션</label>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <input type="checkbox" id="tuning-normalize" checked>
+            <span style="color: #aaa; font-size: 13px;">음량 균일화 (라우드니스 표준화)</span>
+          </div>
+          <select id="tuning-normalize-target" style="margin-top: 8px; width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+            <option value="-16">스트리밍 (-16 LUFS)</option>
+            <option value="-14" selected>음원 등록 (-14 LUFS)</option>
+            <option value="-12">팟캐스트 (-12 LUFS)</option>
+            <option value="-9">높은 음량 (-9 LUFS)</option>
+          </select>
+        </div>
+        <div class="property-group">
+          <label>EQ 프리셋</label>
+          <select id="tuning-eq-preset" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+            <option value="none">없음</option>
+            <option value="voice" selected>보컬 강조</option>
+            <option value="bass">저음 강조</option>
+            <option value="treble">고음 강조</option>
+            <option value="clarity">선명도 향상</option>
+          </select>
+        </div>
+        <div class="property-group">
+          <label>추가 옵션</label>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="tuning-compressor">
+              <span style="color: #aaa; font-size: 13px;">다이나믹 컴프레서 (음량 편차 줄이기)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <input type="checkbox" id="tuning-highpass" checked>
+              <span style="color: #aaa; font-size: 13px;">하이패스 필터 (저주파 노이즈 제거)</span>
+            </div>
+          </div>
+        </div>
+        <button class="property-btn" onclick="executeAudioTuning()">🎛️ 튜닝 적용</button>
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
+          <small style="color: #aaa;">💡 음원 등록에 적합하도록 오디오 품질을 향상시킵니다.</small>
+        </div>
       `;
       break;
 
@@ -6062,6 +6124,80 @@ async function executeAudioSpeed() {
   }
 }
 
+// Audio tuning (noise reduction, normalization, EQ)
+async function executeAudioTuning() {
+  if (!currentAudioFile) {
+    alert('먼저 음성 파일을 가져와주세요.');
+    return;
+  }
+
+  // Get tuning options from UI
+  const noiseReduction = document.getElementById('tuning-noise-reduction').checked;
+  const noiseLevel = parseInt(document.getElementById('tuning-noise-level').value);
+  const normalize = document.getElementById('tuning-normalize').checked;
+  const normalizeTarget = parseInt(document.getElementById('tuning-normalize-target').value);
+  const eqPreset = document.getElementById('tuning-eq-preset').value;
+  const compressor = document.getElementById('tuning-compressor').checked;
+  const highpass = document.getElementById('tuning-highpass').checked;
+
+  // Check if at least one option is selected
+  if (!noiseReduction && !normalize && eqPreset === 'none' && !compressor && !highpass) {
+    alert('최소한 하나의 튜닝 옵션을 선택해주세요.');
+    return;
+  }
+
+  showProgress();
+  updateProgress(0, '오디오 튜닝 중...');
+
+  // Save previous audio file path for cleanup
+  const previousAudio = currentAudioFile;
+
+  try {
+    const result = await window.electronAPI.audioTuning({
+      inputPath: currentAudioFile,
+      outputPath: null, // null means create temp file
+      noiseReduction,
+      noiseLevel,
+      normalize,
+      normalizeTarget,
+      eqPreset,
+      compressor,
+      highpass
+    });
+
+    hideProgress();
+
+    // Build summary of applied effects
+    const effects = [];
+    if (noiseReduction) effects.push('노이즈 제거');
+    if (normalize) effects.push(`노멀라이제이션 (${normalizeTarget} LUFS)`);
+    if (eqPreset !== 'none') {
+      const eqNames = { voice: '보컬 강조', bass: '저음 강조', treble: '고음 강조', clarity: '선명도 향상' };
+      effects.push(`EQ: ${eqNames[eqPreset]}`);
+    }
+    if (compressor) effects.push('다이나믹 컴프레서');
+    if (highpass) effects.push('하이패스 필터');
+
+    alert(`음원 튜닝 완료!\n\n적용된 효과:\n• ${effects.join('\n• ')}\n\n편집된 내용은 임시 저장되었습니다.\n최종 저장하려면 "음성 내보내기"를 사용하세요.`);
+
+    // Reload audio with new file
+    await loadAudioFile(result.outputPath);
+    currentAudioFile = result.outputPath;
+
+    // Delete previous temp file if it exists
+    if (previousAudio && previousAudio !== result.outputPath) {
+      try {
+        await window.electronAPI.deleteTempFile(previousAudio);
+      } catch (e) {
+        console.warn('Failed to delete previous temp file:', e);
+      }
+    }
+  } catch (error) {
+    hideProgress();
+    handleError('음원 튜닝', error, '음원 튜닝에 실패했습니다.');
+  }
+}
+
 // Export dialog
 function showExportDialog() {
   alert('현재 편집된 영상은 이미 저장되어 있습니다.\n각 편집 작업 시 저장 위치를 선택하셨습니다.');
@@ -9514,6 +9650,10 @@ function updateModeUI() {
         <button class="tool-btn" data-tool="audio-speed">
           <span class="icon">⚡</span>
           속도 조절
+        </button>
+        <button class="tool-btn" data-tool="audio-tuning">
+          <span class="icon">🎛️</span>
+          음원 튜닝
         </button>
       </div>
       <div class="tool-section">

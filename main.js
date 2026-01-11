@@ -3428,6 +3428,124 @@ ipcMain.handle('copy-audio-file', async (event, options) => {
   });
 });
 
+// Audio tuning (noise reduction, normalization, EQ)
+ipcMain.handle('audio-tuning', async (event, options) => {
+  const {
+    inputPath,
+    outputPath,
+    noiseReduction,
+    noiseLevel,
+    normalize,
+    normalizeTarget,
+    eqPreset,
+    compressor,
+    highpass
+  } = options;
+
+  logInfo('AUDIO_TUNING_START', 'Starting audio tuning', {
+    inputPath,
+    noiseReduction,
+    noiseLevel,
+    normalize,
+    normalizeTarget,
+    eqPreset,
+    compressor,
+    highpass
+  });
+
+  // Build filter chain
+  const filters = [];
+
+  // High-pass filter (remove low frequency noise, rumble)
+  if (highpass) {
+    filters.push('highpass=f=80');
+  }
+
+  // Noise reduction using FFmpeg's afftdn filter
+  if (noiseReduction) {
+    // nr: noise reduction amount (0-97), nt: noise type
+    filters.push(`afftdn=nr=${noiseLevel}:nt=w`);
+  }
+
+  // EQ presets
+  if (eqPreset && eqPreset !== 'none') {
+    switch (eqPreset) {
+      case 'voice':
+        // Boost presence (2-4kHz), reduce mud (200-400Hz)
+        filters.push('equalizer=f=300:t=h:w=200:g=-3');
+        filters.push('equalizer=f=3000:t=h:w=1000:g=3');
+        filters.push('equalizer=f=8000:t=h:w=2000:g=2');
+        break;
+      case 'bass':
+        // Boost low frequencies
+        filters.push('equalizer=f=100:t=h:w=100:g=5');
+        filters.push('equalizer=f=60:t=h:w=50:g=4');
+        break;
+      case 'treble':
+        // Boost high frequencies
+        filters.push('equalizer=f=8000:t=h:w=2000:g=5');
+        filters.push('equalizer=f=12000:t=h:w=3000:g=4');
+        break;
+      case 'clarity':
+        // Enhance clarity and presence
+        filters.push('equalizer=f=2500:t=h:w=1000:g=2');
+        filters.push('equalizer=f=5000:t=h:w=2000:g=3');
+        filters.push('equalizer=f=200:t=h:w=100:g=-2');
+        break;
+    }
+  }
+
+  // Compressor (reduce dynamic range)
+  if (compressor) {
+    filters.push('acompressor=threshold=-20dB:ratio=4:attack=5:release=50');
+  }
+
+  // Loudness normalization (EBU R128)
+  if (normalize) {
+    const targetLUFS = normalizeTarget || -14;
+    filters.push(`loudnorm=I=${targetLUFS}:TP=-1.5:LRA=11`);
+  }
+
+  // Create temp output if not specified
+  let finalOutputPath = outputPath;
+  if (!finalOutputPath) {
+    const os = require('os');
+    const tempDir = os.tmpdir();
+    const timestamp = Date.now();
+    const ext = path.extname(inputPath);
+    finalOutputPath = path.join(tempDir, `tuned_audio_${timestamp}${ext}`);
+  }
+
+  return new Promise((resolve, reject) => {
+    let ffmpegCommand = ffmpeg(inputPath);
+
+    // Apply filters if any
+    if (filters.length > 0) {
+      const filterString = filters.join(',');
+      logInfo('AUDIO_TUNING_FILTERS', 'Applying filters', { filterString });
+      ffmpegCommand = ffmpegCommand.audioFilters(filterString);
+    }
+
+    ffmpegCommand
+      .audioCodec('libmp3lame')
+      .audioBitrate('320k')
+      .audioFrequency(44100)
+      .audioChannels(2)
+      .on('start', (cmd) => {
+        logInfo('AUDIO_TUNING_FFMPEG', 'FFmpeg command', { cmd });
+      })
+      .on('end', () => {
+        logInfo('AUDIO_TUNING_SUCCESS', 'Audio tuning completed', { outputPath: finalOutputPath });
+        resolve({ success: true, outputPath: finalOutputPath });
+      })
+      .on('error', (err) => {
+        logError('AUDIO_TUNING_ERROR', 'Audio tuning failed', { error: err.message });
+        reject(new Error(`Audio tuning failed: ${err.message}`));
+      })
+      .save(finalOutputPath);
+  });
+});
+
 // Open file with system default application
 ipcMain.handle('open-path', async (event, filePath) => {
   const { shell } = require('electron');
