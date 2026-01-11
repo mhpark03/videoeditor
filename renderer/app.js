@@ -1119,13 +1119,19 @@ function showToolProperties(tool) {
             <div style="color: #e0e0e0; font-size: 14px;" id="selected-track-name"></div>
           </div>
         </div>
+        <div class="property-group" id="track-label-group" style="display: none;">
+          <label>트랙 레이블 (구분용)</label>
+          <input type="text" id="track-label" placeholder="예: 메인보컬, 코러스, 드럼" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+          <small style="color: #888; display: block; margin-top: 5px;">트랙을 구분하기 위한 짧은 레이블</small>
+        </div>
         <div class="property-group" id="track-name-group" style="display: none;">
           <label>트랙 이름</label>
           <input type="text" id="track-custom-name" placeholder="트랙 이름을 입력하세요" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
         </div>
         <div class="property-group" id="track-volume-group" style="display: none;">
-          <label>볼륨 <span id="track-volume-value">100</span>%</label>
-          <input type="range" id="track-volume" min="0" max="200" value="100" oninput="document.getElementById('track-volume-value').textContent = this.value">
+          <label>볼륨</label>
+          <input type="number" id="track-volume" min="0" max="200" value="100" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+          <small style="color: #888; display: block; margin-top: 5px;">0-200% (100%가 기본값)</small>
         </div>
         <div class="property-group" id="track-delay-group" style="display: none;">
           <label>시작 지연 (초)</label>
@@ -6441,6 +6447,7 @@ async function selectMixingTrack(trackType) {
       // Show file info and enable add button
       const trackInfo = document.getElementById('selected-track-info');
       const trackName = document.getElementById('selected-track-name');
+      const trackLabelGroup = document.getElementById('track-label-group');
       const trackNameGroup = document.getElementById('track-name-group');
       const trackCustomName = document.getElementById('track-custom-name');
       const volumeGroup = document.getElementById('track-volume-group');
@@ -6450,6 +6457,7 @@ async function selectMixingTrack(trackType) {
       if (trackInfo && trackName && addBtn) {
         trackName.textContent = `📄 ${fileName}`;
         trackInfo.style.display = 'block';
+        if (trackLabelGroup) trackLabelGroup.style.display = 'block';
         if (trackNameGroup) trackNameGroup.style.display = 'block';
         if (trackCustomName) trackCustomName.value = fileNameWithoutExt;
         if (volumeGroup) volumeGroup.style.display = 'block';
@@ -6472,6 +6480,7 @@ function addMixingTrack(trackType) {
   const volume = parseInt(document.getElementById('track-volume')?.value || 100);
   const delay = parseFloat(document.getElementById('track-delay')?.value || 0);
   const customName = document.getElementById('track-custom-name')?.value?.trim();
+  const trackLabel = document.getElementById('track-label')?.value?.trim() || '';
   const fileName = selectedMixingTrackFile.split('\\').pop().split('/').pop();
   const trackName = customName || fileName.replace(/\.[^/.]+$/, '');
 
@@ -6481,6 +6490,7 @@ function addMixingTrack(trackType) {
     type: trackType,
     file: selectedMixingTrackFile,
     name: trackName,
+    label: trackLabel,  // Custom label for track identification
     volume: volume,
     delay: delay,
     selected: true  // Default to selected
@@ -6632,12 +6642,27 @@ async function renderMixingTracksWaveform() {
     icon.textContent = track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔');
     trackElement.appendChild(icon);
 
+    // Track label/name container
+    const nameContainer = document.createElement('div');
+    nameContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px; min-width: 60px; max-width: 100px; flex-shrink: 0;';
+
+    // Label (if exists) - shown prominently
+    if (track.label) {
+      const labelSpan = document.createElement('span');
+      labelSpan.style.cssText = 'color: #667eea; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+      labelSpan.textContent = track.label;
+      labelSpan.title = `${track.label} - ${track.name}`;
+      nameContainer.appendChild(labelSpan);
+    }
+
     // Track name
     const nameSpan = document.createElement('span');
-    nameSpan.style.cssText = 'color: #e0e0e0; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; flex-shrink: 0;';
+    nameSpan.style.cssText = `color: ${track.label ? '#888' : '#e0e0e0'}; font-size: ${track.label ? '10px' : '11px'}; font-weight: ${track.label ? '400' : '500'}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
     nameSpan.textContent = track.name;
     nameSpan.title = track.name;
-    trackElement.appendChild(nameSpan);
+    nameContainer.appendChild(nameSpan);
+
+    trackElement.appendChild(nameContainer);
 
     // Waveform container with seek functionality
     const waveformContainer = document.createElement('div');
@@ -6689,18 +6714,31 @@ async function renderMixingTracksWaveform() {
     };
     trackElement.appendChild(playBtn);
 
-    // Volume slider
-    const volumeSlider = document.createElement('input');
-    volumeSlider.type = 'range';
-    volumeSlider.min = '0';
-    volumeSlider.max = '200';
-    volumeSlider.value = track.volume;
-    volumeSlider.style.cssText = 'width: 50px; height: 4px; cursor: pointer; flex-shrink: 0;';
-    volumeSlider.title = `볼륨: ${track.volume}%`;
-    volumeSlider.onchange = () => {
-      updateMixingTrackVolumeWaveform(index, volumeSlider.value);
+    // Volume input (numeric)
+    const volumeContainer = document.createElement('div');
+    volumeContainer.style.cssText = 'display: flex; align-items: center; gap: 2px; flex-shrink: 0;';
+
+    const volumeInput = document.createElement('input');
+    volumeInput.type = 'number';
+    volumeInput.min = '0';
+    volumeInput.max = '200';
+    volumeInput.value = track.volume;
+    volumeInput.style.cssText = 'width: 45px; height: 24px; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; color: #e0e0e0; text-align: center; font-size: 11px; flex-shrink: 0;';
+    volumeInput.title = '볼륨 (0-200%)';
+    volumeInput.onchange = () => {
+      let vol = parseInt(volumeInput.value) || 0;
+      vol = Math.max(0, Math.min(200, vol));
+      volumeInput.value = vol;
+      updateMixingTrackVolumeWaveform(index, vol);
     };
-    trackElement.appendChild(volumeSlider);
+
+    const volumeLabel = document.createElement('span');
+    volumeLabel.style.cssText = 'color: #888; font-size: 10px;';
+    volumeLabel.textContent = '%';
+
+    volumeContainer.appendChild(volumeInput);
+    volumeContainer.appendChild(volumeLabel);
+    trackElement.appendChild(volumeContainer);
 
     // Delete button
     const deleteBtn = document.createElement('button');
