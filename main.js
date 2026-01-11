@@ -3439,7 +3439,11 @@ ipcMain.handle('audio-tuning', async (event, options) => {
     normalizeTarget,
     eqPreset,
     compressor,
-    highpass
+    highpass,
+    vocalBalance,
+    vocalLevel,
+    instrumentLevel,
+    bassCut
   } = options;
 
   logInfo('AUDIO_TUNING_START', 'Starting audio tuning', {
@@ -3450,11 +3454,26 @@ ipcMain.handle('audio-tuning', async (event, options) => {
     normalizeTarget,
     eqPreset,
     compressor,
-    highpass
+    highpass,
+    vocalBalance,
+    vocalLevel,
+    instrumentLevel,
+    bassCut
   });
 
   // Build filter chain
   const filters = [];
+
+  // Vocal/Instrument balance using stereotools (mid=vocal, side=instrument)
+  if (vocalBalance) {
+    filters.push(`stereotools=mlev=${vocalLevel}:slev=${instrumentLevel}`);
+    // Bass cut for reducing instrument presence
+    if (bassCut && bassCut < 0) {
+      filters.push(`equalizer=f=60:t=h:w=50:g=${bassCut}`);
+      filters.push(`equalizer=f=100:t=h:w=80:g=${bassCut + 1}`);
+      filters.push(`equalizer=f=200:t=h:w=100:g=${Math.round(bassCut / 2)}`);
+    }
+  }
 
   // High-pass filter (remove low frequency noise, rumble)
   if (highpass) {
@@ -3471,10 +3490,13 @@ ipcMain.handle('audio-tuning', async (event, options) => {
   if (eqPreset && eqPreset !== 'none') {
     switch (eqPreset) {
       case 'voice':
-        // Boost presence (2-4kHz), reduce mud (200-400Hz)
-        filters.push('equalizer=f=300:t=h:w=200:g=-3');
-        filters.push('equalizer=f=3000:t=h:w=1000:g=3');
-        filters.push('equalizer=f=8000:t=h:w=2000:g=2');
+        // Boost vocal frequencies (1-4kHz), reduce mud, add volume boost
+        filters.push('equalizer=f=250:t=h:w=150:g=-4');   // Reduce mud
+        filters.push('equalizer=f=1000:t=h:w=500:g=4');   // Boost low-mid vocals
+        filters.push('equalizer=f=2500:t=h:w=1000:g=5');  // Boost presence
+        filters.push('equalizer=f=4000:t=h:w=1000:g=4');  // Boost clarity
+        filters.push('equalizer=f=8000:t=h:w=2000:g=2');  // Air/brightness
+        filters.push('volume=1.3');                       // Overall volume boost
         break;
       case 'bass':
         // Boost low frequencies
@@ -3558,6 +3580,125 @@ ipcMain.handle('audio-tuning', async (event, options) => {
     ffmpeg.on('error', (err) => {
       logError('AUDIO_TUNING_ERROR', 'FFmpeg spawn error', { error: err.message });
       reject(new Error(`Audio tuning failed: ${err.message}`));
+    });
+  });
+});
+
+// Mix multiple audio tracks
+ipcMain.handle('mix-audio-tracks', async (event, options) => {
+  const { tracks, masterVolume, outputFormat, outputPath } = options;
+
+  logInfo('MIX_AUDIO_TRACKS_START', 'Starting audio mixing', {
+    trackCount: tracks.length,
+    masterVolume,
+    outputFormat,
+    outputPath
+  });
+
+  if (!tracks || tracks.length === 0) {
+    throw new Error('No tracks to mix');
+  }
+
+  // Build FFmpeg arguments for mixing multiple tracks
+  const args = [];
+
+  // Add all input files
+  tracks.forEach((track) => {
+    args.push('-i', track.file);
+  });
+
+  // Build the amix filter with volume and delay adjustments
+  const inputFilters = [];
+  const mixInputs = [];
+
+  tracks.forEach((track, index) => {
+    const volumeMultiplier = (track.volume || 100) / 100;
+    const delay = (track.delay || 0) * 1000; // Convert to milliseconds
+
+    let filterParts = [];
+
+    // Add delay if specified
+    if (delay > 0) {
+      filterParts.push(`adelay=${delay}|${delay}`);
+    }
+
+    // Add volume adjustment
+    filterParts.push(`volume=${volumeMultiplier}`);
+
+    if (filterParts.length > 0) {
+      inputFilters.push(`[${index}:a]${filterParts.join(',')}[a${index}]`);
+      mixInputs.push(`[a${index}]`);
+    } else {
+      mixInputs.push(`[${index}:a]`);
+    }
+  });
+
+  // Apply master volume
+  const masterVolumeMultiplier = (masterVolume || 100) / 100;
+
+  // Build filter complex
+  let filterComplex = '';
+  if (inputFilters.length > 0) {
+    filterComplex = inputFilters.join(';') + ';';
+  }
+  filterComplex += `${mixInputs.join('')}amix=inputs=${tracks.length}:duration=longest:normalize=0,volume=${masterVolumeMultiplier}[out]`;
+
+  args.push('-filter_complex', filterComplex);
+  args.push('-map', '[out]');
+
+  // Output codec settings based on format
+  switch (outputFormat) {
+    case 'mp3':
+      args.push('-c:a', 'libmp3lame');
+      args.push('-b:a', '320k');
+      break;
+    case 'wav':
+      args.push('-c:a', 'pcm_s16le');
+      break;
+    case 'flac':
+      args.push('-c:a', 'flac');
+      args.push('-compression_level', '8');
+      break;
+    default:
+      args.push('-c:a', 'libmp3lame');
+      args.push('-b:a', '320k');
+  }
+
+  args.push('-ar', '44100');
+  args.push('-ac', '2');
+  args.push('-y'); // Overwrite output
+  args.push(outputPath);
+
+  logInfo('MIX_AUDIO_TRACKS_FFMPEG', 'FFmpeg command', { args: args.join(' ') });
+
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn(ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stderrData = '';
+
+    ffmpeg.stderr.on('data', (data) => {
+      stderrData += data.toString();
+      // Send progress to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ffmpeg-progress', data.toString());
+      }
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        logInfo('MIX_AUDIO_TRACKS_SUCCESS', 'Audio mixing completed', { outputPath });
+        resolve({ success: true, outputPath });
+      } else {
+        logError('MIX_AUDIO_TRACKS_ERROR', 'Audio mixing failed', { code, stderr: stderrData });
+        reject(new Error(`Audio mixing failed with code ${code}`));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      logError('MIX_AUDIO_TRACKS_ERROR', 'FFmpeg spawn error', { error: err.message });
+      reject(new Error(`Audio mixing failed: ${err.message}`));
     });
   });
 });

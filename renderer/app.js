@@ -392,6 +392,9 @@ let isPreviewingRange = false;    // Flag to prevent auto-skip during range prev
 // Silent audio tracking
 let hasSilentAudio = false;  // Flag to track if current video has auto-generated silent audio
 
+// Mixing mode state
+let mixingTracks = [];  // Array of track objects: { id, type: 'vocal'|'instrument'|'effect', file, name, volume, pan }
+
 // Audio preview listener tracking
 let audioPreviewListener = null;  // Store preview timeupdate listener reference for explicit removal
 let skipTrimRangeListener = null;  // Store skip trim range listener reference for explicit removal
@@ -1045,6 +1048,27 @@ function showToolProperties(tool) {
           </select>
         </div>
         <div class="property-group">
+          <label>보컬/반주 밸런스</label>
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <input type="checkbox" id="tuning-vocal-balance">
+            <span style="color: #aaa; font-size: 13px;">보컬/반주 밸런스 조절</span>
+          </div>
+          <div id="vocal-balance-controls" style="display: none;">
+            <div style="margin-bottom: 10px;">
+              <label style="font-size: 12px; color: #888;">보컬 레벨 <span id="vocal-level-value">2.5</span>x</label>
+              <input type="range" id="tuning-vocal-level" min="1" max="4" step="0.5" value="2.5" oninput="document.getElementById('vocal-level-value').textContent = this.value">
+            </div>
+            <div style="margin-bottom: 10px;">
+              <label style="font-size: 12px; color: #888;">반주 레벨 <span id="instrument-level-value">0.15</span>x</label>
+              <input type="range" id="tuning-instrument-level" min="0.05" max="0.5" step="0.05" value="0.15" oninput="document.getElementById('instrument-level-value').textContent = this.value">
+            </div>
+            <div>
+              <label style="font-size: 12px; color: #888;">저음 감소 (반주) <span id="bass-cut-value">-7</span>dB</label>
+              <input type="range" id="tuning-bass-cut" min="-12" max="0" step="1" value="-7" oninput="document.getElementById('bass-cut-value').textContent = this.value">
+            </div>
+          </div>
+        </div>
+        <div class="property-group">
           <label>추가 옵션</label>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 10px;">
@@ -1062,7 +1086,109 @@ function showToolProperties(tool) {
           <small style="color: #aaa;">💡 음원 등록에 적합하도록 오디오 품질을 향상시킵니다.</small>
         </div>
       `;
+
+      // Add toggle event for vocal balance controls
+      setTimeout(() => {
+        const vocalBalanceCheckbox = document.getElementById('tuning-vocal-balance');
+        const vocalBalanceControls = document.getElementById('vocal-balance-controls');
+        if (vocalBalanceCheckbox && vocalBalanceControls) {
+          vocalBalanceCheckbox.addEventListener('change', () => {
+            vocalBalanceControls.style.display = vocalBalanceCheckbox.checked ? 'block' : 'none';
+          });
+        }
+      }, 0);
       break;
+
+    // ============================================================================
+    // Mixing Mode Tools
+    // ============================================================================
+    case 'add-vocal-track':
+    case 'add-instrument-track':
+    case 'add-effect-track':
+      const trackType = tool === 'add-vocal-track' ? 'vocal' : (tool === 'add-instrument-track' ? 'instrument' : 'effect');
+      const trackTypeLabel = tool === 'add-vocal-track' ? '보컬' : (tool === 'add-instrument-track' ? '반주' : '효과음');
+      const trackIcon = tool === 'add-vocal-track' ? '🎤' : (tool === 'add-instrument-track' ? '🎸' : '🔔');
+
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>${trackIcon} ${trackTypeLabel} 트랙 추가</label>
+          <button class="property-btn secondary" onclick="selectMixingTrack('${trackType}')" style="margin-top: 10px;">
+            🎵 ${trackTypeLabel} 파일 선택
+          </button>
+          <div id="selected-track-info" style="display: none; margin-top: 10px; padding: 10px; background: #2d2d2d; border-radius: 5px;">
+            <div style="color: #e0e0e0; font-size: 14px;" id="selected-track-name"></div>
+          </div>
+        </div>
+        <div class="property-group" id="track-volume-group" style="display: none;">
+          <label>볼륨 <span id="track-volume-value">100</span>%</label>
+          <input type="range" id="track-volume" min="0" max="200" value="100" oninput="document.getElementById('track-volume-value').textContent = this.value">
+        </div>
+        <div class="property-group" id="track-delay-group" style="display: none;">
+          <label>시작 지연 (초)</label>
+          <input type="number" id="track-delay" value="0" min="0" step="0.1" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+          <small style="color: #888; display: block; margin-top: 5px;">다른 트랙보다 늦게 시작하려면 값을 입력하세요</small>
+        </div>
+        <button class="property-btn" id="add-track-btn" onclick="addMixingTrack('${trackType}')" style="display: none;">
+          ➕ 트랙에 추가
+        </button>
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 15px;">
+          <small style="color: #aaa;">💡 ${trackTypeLabel} 파일을 선택하여 믹싱 트랙에 추가합니다.</small>
+        </div>
+      `;
+      break;
+
+    case 'mix-tracks':
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>🎚️ 트랙 믹싱</label>
+          <div id="mixing-tracks-list" style="margin-top: 10px;">
+            ${mixingTracks.length === 0 ? '<p style="color: #888;">추가된 트랙이 없습니다.</p>' : ''}
+          </div>
+        </div>
+        ${mixingTracks.length > 0 ? `
+        <div class="property-group">
+          <label>마스터 볼륨 <span id="master-volume-value">100</span>%</label>
+          <input type="range" id="master-volume" min="0" max="200" value="100" oninput="document.getElementById('master-volume-value').textContent = this.value">
+        </div>
+        <div class="property-group">
+          <label>출력 형식</label>
+          <select id="mix-output-format" style="width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; border-radius: 4px; color: #e0e0e0;">
+            <option value="mp3" selected>MP3 (일반 음원)</option>
+            <option value="wav">WAV (무손실)</option>
+            <option value="flac">FLAC (무손실 압축)</option>
+          </select>
+        </div>
+        <button class="property-btn" onclick="executeMixTracks()">🎶 믹싱 실행</button>
+        ` : ''}
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 15px;">
+          <small style="color: #aaa;">💡 좌측 메뉴에서 보컬/반주/효과음 트랙을 추가한 후 믹싱하세요.</small>
+        </div>
+      `;
+
+      // Render tracks list
+      if (mixingTracks.length > 0) {
+        const tracksList = document.getElementById('mixing-tracks-list');
+        tracksList.innerHTML = mixingTracks.map((track, index) => `
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: #2d2d2d; border-radius: 5px; margin-bottom: 8px;">
+            <span style="font-size: 18px;">${track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔')}</span>
+            <div style="flex: 1; min-width: 0;">
+              <div style="color: #e0e0e0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${track.name}</div>
+              <div style="color: #888; font-size: 11px;">${track.type === 'vocal' ? '보컬' : (track.type === 'instrument' ? '반주' : '효과음')} | ${track.volume}% | +${track.delay}초</div>
+            </div>
+            <button onclick="removeMixingTrack(${index})" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 12px;">삭제</button>
+          </div>
+        `).join('');
+      }
+      break;
+
+    case 'export-mix':
+      if (mixingTracks.length === 0) {
+        alert('먼저 트랙을 추가해주세요.');
+        return;
+      }
+      // Show mix-tracks panel with export ready
+      showPropertyPanel('mix-tracks');
+      return;
 
     case 'quality':
       if (!currentVideo) {
@@ -6140,8 +6266,14 @@ async function executeAudioTuning() {
   const compressor = document.getElementById('tuning-compressor').checked;
   const highpass = document.getElementById('tuning-highpass').checked;
 
+  // Get vocal balance options
+  const vocalBalance = document.getElementById('tuning-vocal-balance').checked;
+  const vocalLevel = vocalBalance ? parseFloat(document.getElementById('tuning-vocal-level').value) : 1;
+  const instrumentLevel = vocalBalance ? parseFloat(document.getElementById('tuning-instrument-level').value) : 1;
+  const bassCut = vocalBalance ? parseInt(document.getElementById('tuning-bass-cut').value) : 0;
+
   // Check if at least one option is selected
-  if (!noiseReduction && !normalize && eqPreset === 'none' && !compressor && !highpass) {
+  if (!noiseReduction && !normalize && eqPreset === 'none' && !compressor && !highpass && !vocalBalance) {
     alert('최소한 하나의 튜닝 옵션을 선택해주세요.');
     return;
   }
@@ -6162,13 +6294,18 @@ async function executeAudioTuning() {
       normalizeTarget,
       eqPreset,
       compressor,
-      highpass
+      highpass,
+      vocalBalance,
+      vocalLevel,
+      instrumentLevel,
+      bassCut
     });
 
     hideProgress();
 
     // Build summary of applied effects
     const effects = [];
+    if (vocalBalance) effects.push(`보컬/반주 밸런스 (보컬 ${vocalLevel}x, 반주 ${instrumentLevel}x, 저음 ${bassCut}dB)`);
     if (noiseReduction) effects.push('노이즈 제거');
     if (normalize) effects.push(`노멀라이제이션 (${normalizeTarget} LUFS)`);
     if (eqPreset !== 'none') {
@@ -6197,6 +6334,134 @@ async function executeAudioTuning() {
     handleError('음원 튜닝', error, '음원 튜닝에 실패했습니다.');
   }
 }
+
+// ============================================================================
+// Mixing Mode Functions
+// ============================================================================
+
+// Temporary storage for selected track file
+let selectedMixingTrackFile = null;
+
+async function selectMixingTrack(trackType) {
+  try {
+    const filePath = await window.electronAPI.selectAudio();
+    if (filePath) {
+      selectedMixingTrackFile = filePath;
+      const fileName = filePath.split('\\').pop().split('/').pop();
+
+      // Show file info and enable add button
+      const trackInfo = document.getElementById('selected-track-info');
+      const trackName = document.getElementById('selected-track-name');
+      const volumeGroup = document.getElementById('track-volume-group');
+      const delayGroup = document.getElementById('track-delay-group');
+      const addBtn = document.getElementById('add-track-btn');
+
+      if (trackInfo && trackName && addBtn) {
+        trackName.textContent = `📄 ${fileName}`;
+        trackInfo.style.display = 'block';
+        if (volumeGroup) volumeGroup.style.display = 'block';
+        if (delayGroup) delayGroup.style.display = 'block';
+        addBtn.style.display = 'block';
+      }
+    }
+  } catch (error) {
+    console.error('Error selecting mixing track:', error);
+    alert('파일 선택 중 오류가 발생했습니다.');
+  }
+}
+
+function addMixingTrack(trackType) {
+  if (!selectedMixingTrackFile) {
+    alert('먼저 파일을 선택해주세요.');
+    return;
+  }
+
+  const volume = parseInt(document.getElementById('track-volume')?.value || 100);
+  const delay = parseFloat(document.getElementById('track-delay')?.value || 0);
+  const fileName = selectedMixingTrackFile.split('\\').pop().split('/').pop();
+
+  // Add track to mixing tracks array
+  mixingTracks.push({
+    id: Date.now(),
+    type: trackType,
+    file: selectedMixingTrackFile,
+    name: fileName,
+    volume: volume,
+    delay: delay
+  });
+
+  // Reset selected file
+  selectedMixingTrackFile = null;
+
+  // Show success message
+  alert(`${trackType === 'vocal' ? '보컬' : (trackType === 'instrument' ? '반주' : '효과음')} 트랙이 추가되었습니다.\n\n현재 ${mixingTracks.length}개의 트랙이 있습니다.`);
+
+  // Go to mix-tracks view
+  showPropertyPanel('mix-tracks');
+}
+
+function removeMixingTrack(index) {
+  if (index >= 0 && index < mixingTracks.length) {
+    const track = mixingTracks[index];
+    mixingTracks.splice(index, 1);
+    alert(`"${track.name}" 트랙이 삭제되었습니다.`);
+    showPropertyPanel('mix-tracks');
+  }
+}
+
+async function executeMixTracks() {
+  if (mixingTracks.length === 0) {
+    alert('먼저 트랙을 추가해주세요.');
+    return;
+  }
+
+  const masterVolume = parseInt(document.getElementById('master-volume')?.value || 100);
+  const outputFormat = document.getElementById('mix-output-format')?.value || 'mp3';
+
+  // Select output path
+  const defaultName = `mixed_audio_${Date.now()}.${outputFormat}`;
+  const outputPath = await window.electronAPI.selectAudioSavePath(defaultName);
+  if (!outputPath) return;
+
+  showProgress();
+  updateProgress(0, '트랙 믹싱 중...');
+
+  try {
+    const result = await window.electronAPI.mixAudioTracks({
+      tracks: mixingTracks.map(t => ({
+        file: t.file,
+        volume: t.volume,
+        delay: t.delay
+      })),
+      masterVolume,
+      outputFormat,
+      outputPath
+    });
+
+    hideProgress();
+
+    if (result.success) {
+      alert(`믹싱 완료!\n\n저장 위치: ${result.outputPath}\n\n총 ${mixingTracks.length}개 트랙이 믹싱되었습니다.`);
+
+      // Ask if user wants to clear tracks
+      if (confirm('트랙 목록을 초기화하시겠습니까?')) {
+        mixingTracks = [];
+        showPropertyPanel('mix-tracks');
+      }
+    } else {
+      throw new Error(result.error || '믹싱에 실패했습니다.');
+    }
+  } catch (error) {
+    hideProgress();
+    handleError('트랙 믹싱', error, '트랙 믹싱에 실패했습니다.');
+  }
+}
+
+// Expose mixing functions globally
+window.selectMixingTrack = selectMixingTrack;
+window.addMixingTrack = addMixingTrack;
+window.removeMixingTrack = removeMixingTrack;
+window.executeMixTracks = executeMixTracks;
 
 // Export dialog
 function showExportDialog() {
@@ -9380,11 +9645,13 @@ function setupModeButtons() {
   console.log('[setupModeButtons] Setting up mode buttons');
   const videoModeBtn = document.getElementById('video-mode-btn');
   const audioModeBtn = document.getElementById('audio-mode-btn');
+  const mixingModeBtn = document.getElementById('mixing-mode-btn');
   const contentModeBtn = document.getElementById('content-mode-btn');
 
   console.log('[setupModeButtons] Buttons found:', {
     video: !!videoModeBtn,
     audio: !!audioModeBtn,
+    mixing: !!mixingModeBtn,
     content: !!contentModeBtn
   });
 
@@ -9399,6 +9666,13 @@ function setupModeButtons() {
     audioModeBtn.addEventListener('click', () => {
       console.log('[Mode Button] Audio button clicked');
       switchMode('audio');
+    });
+  }
+
+  if (mixingModeBtn) {
+    mixingModeBtn.addEventListener('click', () => {
+      console.log('[Mode Button] Mixing button clicked');
+      switchMode('mixing');
     });
   }
 
@@ -9453,10 +9727,10 @@ function switchMode(mode) {
     modeMessage = '영상 편집 모드로 전환됨';
   } else if (mode === 'audio') {
     modeMessage = '음성 편집 모드로 전환됨';
-  } else if (mode === 'tts') {
-    modeMessage = 'TTS 음성 생성 모드로 전환됨';
-    // TTS 모드로 전환 시 자동으로 TTS 패널 표시
-    showPropertyPanel('generate-tts');
+  } else if (mode === 'mixing') {
+    modeMessage = '음원 믹싱 모드로 전환됨';
+  } else if (mode === 'content') {
+    modeMessage = '컨텐츠 생성 모드로 전환됨';
   }
   updateStatus(modeMessage);
 }
@@ -9664,6 +9938,42 @@ function updateModeUI() {
         </button>
       </div>
     `;
+  } else if (currentMode === 'mixing') {
+    // Mixing mode
+    header.textContent = '음원 믹싱';
+    subtitle.textContent = '보컬과 반주를 조합하여 음원 제작';
+    sidebar.innerHTML = `
+      <h2>믹싱 도구</h2>
+      <div class="tool-section">
+        <h3>트랙 관리</h3>
+        <button class="tool-btn" data-tool="add-vocal-track">
+          <span class="icon">🎤</span>
+          보컬 트랙 추가
+        </button>
+        <button class="tool-btn" data-tool="add-instrument-track">
+          <span class="icon">🎸</span>
+          반주 트랙 추가
+        </button>
+        <button class="tool-btn" data-tool="add-effect-track">
+          <span class="icon">🔔</span>
+          효과음 트랙 추가
+        </button>
+      </div>
+      <div class="tool-section">
+        <h3>믹싱</h3>
+        <button class="tool-btn" data-tool="mix-tracks">
+          <span class="icon">🎚️</span>
+          트랙 믹싱
+        </button>
+      </div>
+      <div class="tool-section">
+        <h3>내보내기</h3>
+        <button class="tool-btn export-btn" data-tool="export-mix">
+          <span class="icon">💾</span>
+          믹싱 내보내기
+        </button>
+      </div>
+    `;
   } else {
     // Video mode
     header.textContent = 'Kiosk Video Editor';
@@ -9747,6 +10057,10 @@ function updateModeUI() {
     if (currentMode === 'audio') {
       placeholderP.textContent = '음성 파일을 가져와주세요';
       importBtn.textContent = '🎵 음성 선택';
+      importBtn.style.display = 'block';
+    } else if (currentMode === 'mixing') {
+      placeholderP.textContent = '트랙을 추가하여 믹싱을 시작하세요';
+      importBtn.style.display = 'none'; // 믹싱 모드에서는 가져오기 버튼 숨김
     } else if (currentMode === 'tts') {
       placeholderP.textContent = 'TTS 음성 생성 모드';
       importBtn.style.display = 'none'; // TTS 모드에서는 가져오기 버튼 숨김
@@ -9764,12 +10078,14 @@ function updateModeUI() {
   // Update header mode buttons
   const videoModeBtn = document.getElementById('video-mode-btn');
   const audioModeBtn = document.getElementById('audio-mode-btn');
+  const mixingModeBtn = document.getElementById('mixing-mode-btn');
   const contentModeBtn = document.getElementById('content-mode-btn');
 
   if (videoModeBtn && audioModeBtn && contentModeBtn) {
     // Remove active from all
     videoModeBtn.classList.remove('active');
     audioModeBtn.classList.remove('active');
+    if (mixingModeBtn) mixingModeBtn.classList.remove('active');
     contentModeBtn.classList.remove('active');
 
     // Add active to current mode
@@ -9777,6 +10093,8 @@ function updateModeUI() {
       videoModeBtn.classList.add('active');
     } else if (currentMode === 'audio') {
       audioModeBtn.classList.add('active');
+    } else if (currentMode === 'mixing') {
+      if (mixingModeBtn) mixingModeBtn.classList.add('active');
     } else if (currentMode === 'content') {
       contentModeBtn.classList.add('active');
     }
