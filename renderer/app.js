@@ -6551,55 +6551,84 @@ function renderMixingTracksPreview() {
     placeholder.style.flexDirection = 'column';
     placeholder.style.alignItems = 'stretch';
     placeholder.style.justifyContent = 'flex-start';
-    placeholder.style.padding = '20px';
+    placeholder.style.padding = '15px';
     placeholder.style.overflowY = 'auto';
 
     const selectedCount = mixingTracks.filter(t => t.selected).length;
     const allSelected = selectedCount === mixingTracks.length;
 
     placeholder.innerHTML = `
-      <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h3 style="color: #e0e0e0; margin: 0 0 5px 0;">🎚️ 믹싱 트랙 목록</h3>
-          <p style="color: #888; font-size: 12px; margin: 0;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택됨)</p>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 8px 10px; background: #3d3d3d; border-radius: 6px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <input type="checkbox" id="select-all-tracks" ${allSelected ? 'checked' : ''} onchange="toggleAllMixingTracks(this.checked)" style="width: 16px; height: 16px; cursor: pointer;">
+          <span style="color: #e0e0e0; font-size: 13px;">${mixingTracks.length}개 트랙 (${selectedCount}개 선택)</span>
         </div>
-        <button onclick="if(confirm('모든 트랙을 삭제하고 작업을 초기화하시겠습니까?')) clearMixingSession()" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 11px;" title="작업 초기화">
-          🗑️ 초기화
-        </button>
-      </div>
-      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #3d3d3d; border-radius: 6px; margin-bottom: 10px;">
-        <input type="checkbox" id="select-all-tracks" ${allSelected ? 'checked' : ''} onchange="toggleAllMixingTracks(this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
-        <label for="select-all-tracks" style="color: #e0e0e0; font-size: 13px; cursor: pointer; flex: 1;">전체 선택</label>
-        <button onclick="mixSelectedTracks()" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px; font-weight: 600;" ${selectedCount === 0 ? 'disabled style="background: #555; cursor: not-allowed;"' : ''}>
-          🎶 선택 믹싱 (${selectedCount})
-        </button>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="mixSelectedTracks()" style="background: #10b981; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 11px; font-weight: 600;" ${selectedCount === 0 ? 'disabled style="background: #555; cursor: not-allowed;"' : ''}>
+            🎶 믹싱 (${selectedCount})
+          </button>
+          <button onclick="if(confirm('모든 트랙을 삭제하고 작업을 초기화하시겠습니까?')) clearMixingSession()" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 11px;" title="작업 초기화">
+            🗑️
+          </button>
+        </div>
       </div>
       <div id="mixing-preview-tracks" style="flex: 1; overflow-y: auto;">
         ${mixingTracks.map((track, index) => `
-          <div class="mixing-track-item" style="display: flex; align-items: center; gap: 10px; padding: 12px; background: ${track.selected ? '#2d2d2d' : '#1a1a1a'}; border-radius: 8px; margin-bottom: 10px; border: 1px solid ${track.selected ? '#667eea' : '#3d3d3d'}; opacity: ${track.selected ? '1' : '0.6'};">
-            <input type="checkbox" ${track.selected ? 'checked' : ''} onchange="toggleMixingTrackSelection(${index}, this.checked)" style="width: 18px; height: 18px; cursor: pointer;">
-            <span style="font-size: 24px;">${track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔')}</span>
-            <div style="flex: 1; min-width: 0;">
-              <div style="color: #e0e0e0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${track.name}</div>
-              <div style="color: #888; font-size: 11px; margin-top: 2px;">${track.type === 'vocal' ? '보컬' : (track.type === 'instrument' ? '반주' : '효과음')} | +${track.delay}초</div>
+          <div class="mixing-track-item" data-index="${index}" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: ${track.selected ? '#2d2d2d' : '#1a1a1a'}; border-radius: 6px; margin-bottom: 6px; border: 1px solid ${track.selected ? '#667eea' : '#333'}; opacity: ${track.selected ? '1' : '0.5'};">
+            <input type="checkbox" ${track.selected ? 'checked' : ''} onchange="toggleMixingTrackSelection(${index}, this.checked)" style="width: 16px; height: 16px; cursor: pointer; flex-shrink: 0;">
+            <span style="font-size: 18px; flex-shrink: 0;">${track.type === 'vocal' ? '🎤' : (track.type === 'instrument' ? '🎸' : '🔔')}</span>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="color: #e0e0e0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${track.name}</span>
+                <span style="color: #666; font-size: 10px; flex-shrink: 0;">+${track.delay}s</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <input type="range" id="track-seek-${index}" min="0" max="100" value="${track.seekPosition || 0}"
+                  onmousedown="pauseMixingTrackForSeek(${index})"
+                  onchange="seekMixingTrack(${index}, this.value)"
+                  style="flex: 1; height: 4px; cursor: pointer; accent-color: #667eea;">
+                <span id="track-time-${index}" style="color: #888; font-size: 10px; min-width: 35px; text-align: right;">${track.currentTime || '0:00'}</span>
+              </div>
             </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button onclick="playMixingTrack(${index})" style="background: ${currentPlayingTrackIndex === index ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; font-size: 14px;" title="${currentPlayingTrackIndex === index ? '정지' : '재생'}">
+            <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+              <button onclick="playMixingTrack(${index})" style="background: ${currentPlayingTrackIndex === index ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;" title="${currentPlayingTrackIndex === index ? '정지' : '재생'}">
                 ${currentPlayingTrackIndex === index ? '⏹' : '▶'}
               </button>
-              <div style="display: flex; flex-direction: column; align-items: center; gap: 2px;">
-                <input type="range" min="0" max="200" value="${track.volume}"
-                  onchange="updateMixingTrackVolume(${index}, this.value)"
-                  style="width: 80px; height: 4px; cursor: pointer;"
-                  title="볼륨: ${track.volume}%">
-                <span style="color: #aaa; font-size: 10px;">${track.volume}%</span>
-              </div>
-              <button onclick="removeMixingTrack(${index})" style="background: #dc2626; color: white; border: none; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 11px;" title="삭제">✕</button>
+              <input type="range" min="0" max="200" value="${track.volume}"
+                onchange="updateMixingTrackVolume(${index}, this.value)"
+                style="width: 50px; height: 4px; cursor: pointer;"
+                title="볼륨: ${track.volume}%">
+              <button onclick="removeMixingTrack(${index})" style="background: transparent; color: #888; border: none; cursor: pointer; font-size: 14px; padding: 2px;" title="삭제">✕</button>
             </div>
           </div>
         `).join('')}
       </div>
     `;
+  }
+}
+
+// Track playback update interval
+let mixingTrackUpdateInterval = null;
+
+function formatTrackTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function updateTrackPlaybackUI(index) {
+  if (!mixingTrackAudio || currentPlayingTrackIndex !== index) return;
+
+  const seekBar = document.getElementById(`track-seek-${index}`);
+  const timeDisplay = document.getElementById(`track-time-${index}`);
+
+  if (seekBar && mixingTrackAudio.duration) {
+    const percent = (mixingTrackAudio.currentTime / mixingTrackAudio.duration) * 100;
+    seekBar.value = percent;
+  }
+
+  if (timeDisplay) {
+    timeDisplay.textContent = formatTrackTime(mixingTrackAudio.currentTime);
   }
 }
 
@@ -6621,12 +6650,19 @@ function playMixingTrack(index) {
   mixingTrackAudio = new Audio();
   mixingTrackAudio.volume = track.volume / 100;
 
-  // Try to load and play
-  mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
-  mixingTrackAudio.play().then(() => {
+  const startPlayback = () => {
     currentPlayingTrackIndex = index;
     renderMixingTracksPreview();
-  }).catch(async (error) => {
+
+    // Start updating UI
+    mixingTrackUpdateInterval = setInterval(() => {
+      updateTrackPlaybackUI(index);
+    }, 100);
+  };
+
+  // Try to load and play
+  mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+  mixingTrackAudio.play().then(startPlayback).catch(async (error) => {
     console.log('Direct file play failed, trying via IPC:', error);
     // Fallback: read file via IPC
     try {
@@ -6634,8 +6670,7 @@ function playMixingTrack(index) {
       if (audioData) {
         mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
         await mixingTrackAudio.play();
-        currentPlayingTrackIndex = index;
-        renderMixingTracksPreview();
+        startPlayback();
       }
     } catch (e) {
       console.error('Failed to play track:', e);
@@ -6645,19 +6680,89 @@ function playMixingTrack(index) {
 
   // When audio ends
   mixingTrackAudio.onended = () => {
+    if (mixingTrackUpdateInterval) {
+      clearInterval(mixingTrackUpdateInterval);
+      mixingTrackUpdateInterval = null;
+    }
     currentPlayingTrackIndex = -1;
     renderMixingTracksPreview();
   };
 }
 
 function stopMixingTrack() {
+  if (mixingTrackUpdateInterval) {
+    clearInterval(mixingTrackUpdateInterval);
+    mixingTrackUpdateInterval = null;
+  }
   if (mixingTrackAudio) {
     mixingTrackAudio.pause();
     mixingTrackAudio.currentTime = 0;
     mixingTrackAudio = null;
   }
   currentPlayingTrackIndex = -1;
-  renderMixingTracksPreview();
+}
+
+function pauseMixingTrackForSeek(index) {
+  // Called when user starts dragging the seek bar
+  if (currentPlayingTrackIndex === index && mixingTrackAudio) {
+    mixingTrackAudio.pause();
+  }
+}
+
+function seekMixingTrack(index, percent) {
+  if (index < 0 || index >= mixingTracks.length) return;
+
+  // If this track is loaded
+  if (currentPlayingTrackIndex === index && mixingTrackAudio && mixingTrackAudio.duration) {
+    const time = (percent / 100) * mixingTrackAudio.duration;
+    mixingTrackAudio.currentTime = time;
+    mixingTrackAudio.play();
+    updateTrackPlaybackUI(index);
+  } else {
+    // Load and seek to position
+    const track = mixingTracks[index];
+    stopMixingTrack();
+
+    mixingTrackAudio = new Audio();
+    mixingTrackAudio.volume = track.volume / 100;
+
+    const setupSeek = () => {
+      if (mixingTrackAudio.duration) {
+        const time = (percent / 100) * mixingTrackAudio.duration;
+        mixingTrackAudio.currentTime = time;
+        currentPlayingTrackIndex = index;
+        mixingTrackAudio.play();
+        renderMixingTracksPreview();
+
+        mixingTrackUpdateInterval = setInterval(() => {
+          updateTrackPlaybackUI(index);
+        }, 100);
+      }
+    };
+
+    mixingTrackAudio.src = `file://${track.file.replace(/\\/g, '/')}`;
+    mixingTrackAudio.onloadedmetadata = setupSeek;
+    mixingTrackAudio.onerror = async () => {
+      try {
+        const audioData = await window.electronAPI.readAudioFile(track.file);
+        if (audioData) {
+          mixingTrackAudio.src = `data:audio/mpeg;base64,${audioData}`;
+          mixingTrackAudio.onloadedmetadata = setupSeek;
+        }
+      } catch (e) {
+        console.error('Failed to load track for seeking:', e);
+      }
+    };
+
+    mixingTrackAudio.onended = () => {
+      if (mixingTrackUpdateInterval) {
+        clearInterval(mixingTrackUpdateInterval);
+        mixingTrackUpdateInterval = null;
+      }
+      currentPlayingTrackIndex = -1;
+      renderMixingTracksPreview();
+    };
+  }
 }
 
 function updateMixingTrackVolume(index, volume) {
@@ -6808,6 +6913,8 @@ window.saveMixingSession = saveMixingSession;
 window.loadMixingSession = loadMixingSession;
 window.restoreMixingSession = restoreMixingSession;
 window.clearMixingSession = clearMixingSession;
+window.pauseMixingTrackForSeek = pauseMixingTrackForSeek;
+window.seekMixingTrack = seekMixingTrack;
 
 // Export dialog
 function showExportDialog() {
@@ -10406,6 +10513,9 @@ function updateModeUI() {
       importBtn.style.display = 'block';
     } else if (currentMode === 'mixing') {
       importBtn.style.display = 'none'; // 믹싱 모드에서는 가져오기 버튼 숨김
+      // Hide timeline in mixing mode
+      const timelineContainer = document.querySelector('.timeline-container');
+      if (timelineContainer) timelineContainer.style.display = 'none';
       // Render mixing tracks in the preview area
       renderMixingTracksPreview();
     } else if (currentMode === 'tts') {
@@ -10415,6 +10525,12 @@ function updateModeUI() {
       placeholderP.textContent = '영상을 가져와주세요';
       importBtn.textContent = '📁 영상 선택';
       importBtn.style.display = 'block';
+    }
+
+    // Show timeline in non-mixing modes
+    if (currentMode !== 'mixing') {
+      const timelineContainer = document.querySelector('.timeline-container');
+      if (timelineContainer) timelineContainer.style.display = '';
     }
   }
 
