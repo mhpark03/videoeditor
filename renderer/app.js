@@ -263,8 +263,8 @@ window.executeExtractFrames = function() { return executeExtractFrames(); };
 window.executeExtractAndAddSubtitles = function() { return executeExtractAndAddSubtitles(); };
 window.executeExtractSubtitlesOnly = function() { return executeExtractSubtitlesOnly(); };
 window.executeAddSubtitlesFromFile = function() { return executeAddSubtitlesFromFile(); };
-window.executeExportAudioToS3 = function() { return executeExportAudioToS3(); };
-window.executeExtractAudioToS3 = function() { return executeExtractAudioToS3(); };
+window.executeExportAudioLocal = function() { return executeExportAudioLocal(); };
+window.executeExtractAudioLocal = function() { return executeExtractAudioLocal(); };
 
 // AI generation exports
 window.executeGenerateImageRunway = RunwayModule.executeGenerateImageRunway;  // Use module
@@ -695,33 +695,11 @@ function showToolProperties(tool) {
             </div>
           </div>
         </div>
-        <div class="property-group">
-          <label style="pointer-events: none; user-select: none; display: block; margin-bottom: 5px; color: #aaa;">제목 *</label>
-          <input type="text" id="export-audio-title" placeholder="음성 파일 제목을 입력하세요" style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #555; border-radius: 4px; color: #e0e0e0; font-size: 14px;"/>
-        </div>
-        <div class="property-group">
-          <label style="pointer-events: none; user-select: none; display: block; margin-bottom: 5px; color: #aaa;">설명 *</label>
-          <textarea id="export-audio-description" placeholder="음성 파일 설명을 입력하세요" rows="4" style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #555; border-radius: 4px; color: #e0e0e0; font-size: 14px; resize: vertical;"></textarea>
-        </div>
-        <button class="property-btn" onclick="executeExportAudioToS3()" style="width: 100%;">☁️ S3 업로드</button>
+        <button class="property-btn" onclick="executeExportAudioLocal()" style="width: 100%;">💾 로컬 PC에 저장</button>
         <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
-          <small style="color: #aaa;">💡 제목과 설명을 입력하고 S3에 업로드하여 관리할 수 있습니다. (제목 필수)</small>
+          <small style="color: #aaa;">💡 편집된 음성 파일을 원하는 위치에 저장합니다.</small>
         </div>
       `;
-
-      // Set values immediately - no focus manipulation needed
-      setTimeout(() => {
-        const titleInput = document.getElementById('export-audio-title');
-        const descriptionInput = document.getElementById('export-audio-description');
-
-        if (titleInput) {
-          titleInput.value = currentAudioMetadata.title || '';
-        }
-
-        if (descriptionInput) {
-          descriptionInput.value = currentAudioMetadata.description || '';
-        }
-      }, 50);
       break;
 
     case 'merge':
@@ -858,20 +836,12 @@ function showToolProperties(tool) {
 
     case 'extract-audio':
       // Use video metadata as default values if available
-      const extractTitle = currentVideoMetadata?.title || '';
-      const extractDescription = currentVideoMetadata?.description || '';
-
       propertiesPanel.innerHTML = `
         <p style="margin-bottom: 20px;">현재 영상에서 오디오를 추출합니다.</p>
-        <div class="property-group">
-          <label>제목</label>
-          <input type="text" id="extract-audio-title" placeholder="추출된 오디오 제목 입력" value="${extractTitle.replace(/"/g, '&quot;')}">
+        <button class="property-btn" onclick="executeExtractAudioLocal()">💾 PC에 저장</button>
+        <div style="background: #3a3a3a; padding: 10px; border-radius: 5px; margin-top: 10px;">
+          <small style="color: #aaa;">💡 영상에서 오디오만 추출하여 MP3 파일로 저장합니다.</small>
         </div>
-        <div class="property-group">
-          <label>설명 *</label>
-          <textarea id="extract-audio-description" rows="3" placeholder="설명을 입력하세요">${extractDescription.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
-        </div>
-        <button class="property-btn" onclick="executeExtractAudioToS3()">PC에 저장</button>
       `;
       break;
 
@@ -5589,158 +5559,6 @@ async function executeExtractAudioLocal() {
   }
 }
 
-// Extract audio and upload to S3
-async function executeExtractAudioToS3() {
-  console.log('[Extract Audio S3] Function called');
-
-  if (!currentVideo) {
-    alert('먼저 영상을 가져와주세요.');
-    return;
-  }
-
-  // Check if video has audio stream
-  try {
-    const videoInfo = await window.electronAPI.getVideoInfo(currentVideo);
-    const hasAudio = videoInfo.streams && videoInfo.streams.some(stream => stream.codec_type === 'audio');
-
-    if (!hasAudio) {
-      alert('이 영상 파일에는 오디오가 포함되어 있지 않습니다.\n\n오디오 추출을 할 수 없습니다.');
-      return;
-    }
-  } catch (error) {
-    console.error('[Extract Audio S3] Failed to check video info:', error);
-    alert('영상 정보를 확인할 수 없습니다.');
-    return;
-  }
-
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-  const baseUrl = window.getBackendUrl ? window.getBackendUrl() : backendBaseUrl;
-
-  // Check if user is logged in
-  if (!token || !user) {
-    alert('S3에 업로드하려면 로그인이 필요합니다.');
-    return;
-  }
-
-  // Get title and description from input fields
-  const titleInput = document.getElementById('extract-audio-title');
-  const descriptionInput = document.getElementById('extract-audio-description');
-
-  const title = titleInput ? titleInput.value.trim() : '';
-  const description = descriptionInput ? descriptionInput.value.trim() : '';
-
-  if (!title) {
-    alert('제목을 입력해주세요.');
-    if (titleInput) titleInput.focus();
-    return;
-  }
-
-  if (!description) {
-    alert('설명을 입력해주세요.');
-    if (descriptionInput) descriptionInput.focus();
-    return;
-  }
-
-  showProgress();
-  updateProgress(0, '제목 중복 확인 중...');
-
-  try {
-    // Check for duplicate title using my-videos endpoint
-    console.log('[Extract Audio S3] Checking for duplicate title:', title);
-    const checkResponse = await fetch(`${baseUrl}/api/videos/my-videos`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!checkResponse.ok) {
-      throw new Error(`제목 확인 실패: ${checkResponse.status}`);
-    }
-
-    const allVideos = await checkResponse.json();
-    const audioFiles = allVideos.filter(v => v.mediaType === 'AUDIO');
-    const duplicateTitle = audioFiles.find(audio => audio.title === title);
-
-    if (duplicateTitle) {
-      hideProgress();
-      alert(`같은 제목의 음성 파일이 이미 존재합니다.\n\n제목: ${title}\n\n다른 제목을 사용해주세요.`);
-      if (titleInput) titleInput.focus();
-      return;
-    }
-
-    // First, extract audio to a temporary file
-    updateProgress(30, '영상에서 오디오 추출 중...');
-
-    console.log('[Extract Audio S3] Extracting audio to temp file');
-
-    const extractResult = await window.electronAPI.extractAudio({
-      videoPath: currentVideo,
-      outputPath: null  // null means create temp file
-    });
-
-    console.log('[Extract Audio S3] Extraction complete:', extractResult.outputPath);
-
-    // Upload extracted audio to S3
-    updateProgress(60, 'S3에 음성 파일 업로드 중...');
-
-    // Read file and create FormData
-    const fileUrl = `file:///${extractResult.outputPath.replace(/\\/g, '/')}`;
-    const fileResponse = await fetch(fileUrl);
-    const audioBlob = await fileResponse.blob();
-    const fileName = `${title}.mp3`;
-
-    console.log('[Extract Audio S3] Uploading to S3:', { title, description, fileName, size: audioBlob.size });
-
-    // Create FormData for multipart upload
-    const formData = new FormData();
-    formData.append('file', audioBlob, fileName);
-    formData.append('title', title);
-    formData.append('description', description);
-
-    // Upload to backend
-    const uploadResponse = await fetch(`${baseUrl}/api/videos/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
-    }
-
-    const result = await uploadResponse.json();
-    console.log('[Extract Audio S3] Upload successful:', result);
-
-    // Clean up temp file
-    try {
-      await window.electronAPI.deleteTempFile(extractResult.outputPath);
-    } catch (cleanupError) {
-      console.warn('[Extract Audio S3] Failed to delete temp file:', cleanupError);
-    }
-
-    updateProgress(100, '오디오 추출 및 업로드 완료!');
-    hideProgress();
-
-    alert(`S3 업로드 완료!\n\n제목: ${title}\n파일명: ${fileName}\n\n클라우드 (audios/uploads/)에 성공적으로 저장되었습니다.`);
-    updateStatus(`S3 업로드 완료: ${title}`);
-
-    // Clear input fields after successful upload
-    if (titleInput) titleInput.value = '';
-    if (descriptionInput) descriptionInput.value = '';
-  } catch (error) {
-    hideProgress();
-    console.error('[Extract Audio S3] Error:', error);
-    handleError('오디오 추출 및 S3 업로드', error, 'S3 업로드에 실패했습니다.');
-  }
-}
-
 // Volume adjust
 function updateVolumeAdjustDisplay() {
   const value = document.getElementById('volume-adjust').value;
@@ -8627,12 +8445,11 @@ async function executeExportAudioLocal() {
     return;
   }
 
-  // Generate default filename
+  // Generate default filename (keep original extension)
   const fileName = currentAudioFile.split('\\').pop().split('/').pop();
-  const defaultName = fileName.endsWith('.mp3') ? fileName : fileName.replace(/\.[^/.]+$/, '.mp3');
 
-  console.log('[Export Audio Local] Requesting file save dialog', { currentFile: fileName, defaultName });
-  const outputPath = await window.electronAPI.selectOutput(defaultName);
+  console.log('[Export Audio Local] Requesting file save dialog', { fileName });
+  const outputPath = await window.electronAPI.selectOutput(fileName);
 
   console.log('[Export Audio Local] Dialog returned', { outputPath });
   if (!outputPath) {
@@ -8665,130 +8482,6 @@ async function executeExportAudioLocal() {
   } catch (error) {
     hideProgress();
     handleError('음성 내보내기', error, '음성 내보내기에 실패했습니다.');
-  }
-}
-
-// Export audio to S3
-async function executeExportAudioToS3() {
-  console.log('[Export Audio S3] Function called');
-
-  if (!currentAudioFile) {
-    alert('먼저 음성 파일을 가져와주세요.');
-    return;
-  }
-
-  // Get auth token from auth module
-  const token = window.getAuthToken ? window.getAuthToken() : authToken;
-  const user = window.getCurrentUser ? window.getCurrentUser() : currentUser;
-  const baseUrl = window.getBackendUrl ? window.getBackendUrl() : backendBaseUrl;
-
-  // Check if user is logged in
-  if (!token || !user) {
-    alert('S3에 업로드하려면 로그인이 필요합니다.');
-    return;
-  }
-
-  // Get title and description from input fields
-  const titleInput = document.getElementById('export-audio-title');
-  const descriptionInput = document.getElementById('export-audio-description');
-
-  const title = titleInput ? titleInput.value.trim() : '';
-  const description = descriptionInput ? descriptionInput.value.trim() : '';
-
-  if (!title) {
-    alert('제목을 입력해주세요.');
-    if (titleInput) titleInput.focus();
-    return;
-  }
-
-  if (!description) {
-    alert('설명을 입력해주세요.');
-    if (descriptionInput) descriptionInput.focus();
-    return;
-  }
-
-  showProgress();
-  updateProgress(0, '제목 중복 확인 중...');
-
-  try {
-    // Check for duplicate title using my-videos endpoint
-    console.log('[Export Audio S3] Checking for duplicate title:', title);
-    const checkResponse = await fetch(`${baseUrl}/api/videos/my-videos`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!checkResponse.ok) {
-      throw new Error(`제목 확인 실패: ${checkResponse.status}`);
-    }
-
-    const allVideos = await checkResponse.json();
-    const audioFiles = allVideos.filter(v => v.mediaType === 'AUDIO');
-    const duplicateTitle = audioFiles.find(audio => audio.title === title);
-
-    if (duplicateTitle) {
-      hideProgress();
-      const overwrite = confirm(`같은 제목의 음성 파일이 이미 존재합니다.\n\n제목: ${title}\n\n다른 제목을 사용해주세요.`);
-      if (titleInput) titleInput.focus();
-      return;
-    }
-
-    updateProgress(50, 'S3에 음성 파일 업로드 중...');
-
-    // Read file and create FormData
-    const fileUrl = `file:///${currentAudioFile.replace(/\\/g, '/')}`;
-    const fileResponse = await fetch(fileUrl);
-    const audioBlob = await fileResponse.blob();
-
-    // Extract original file extension
-    const originalFileName = currentAudioFile.split('\\').pop().split('/').pop();
-    const fileExtension = originalFileName.substring(originalFileName.lastIndexOf('.'));
-
-    // Create filename from title (sanitize for filesystem)
-    const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '_').trim();
-    const fileName = `${sanitizedTitle}${fileExtension}`;
-
-    console.log('[Export Audio S3] Uploading to S3:', { title, description, fileName, size: audioBlob.size });
-
-    // Create FormData for multipart upload
-    const formData = new FormData();
-    formData.append('file', audioBlob, fileName);
-    formData.append('title', title);
-    formData.append('description', description);
-
-    // Upload to backend
-    const uploadResponse = await fetch(`${baseUrl}/api/videos/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      },
-      body: formData
-    });
-
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
-    }
-
-    const result = await uploadResponse.json();
-    console.log('[Export Audio S3] Upload successful:', result);
-
-    updateProgress(100, '음성 파일 업로드 완료!');
-    hideProgress();
-
-    alert(`S3 업로드 완료!\n\n제목: ${title}\n파일명: ${fileName}\n\n클라우드 (audios/uploads/)에 성공적으로 저장되었습니다.`);
-    updateStatus(`S3 업로드 완료: ${title}`);
-
-    // Clear input fields after successful upload
-    if (titleInput) titleInput.value = '';
-    if (descriptionInput) descriptionInput.value = '';
-  } catch (error) {
-    hideProgress();
-    console.error('[Export Audio S3] Error:', error);
-    handleError('S3 업로드', error, 'S3 업로드에 실패했습니다.');
   }
 }
 

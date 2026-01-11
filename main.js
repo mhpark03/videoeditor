@@ -475,9 +475,14 @@ ipcMain.handle('select-output', async (event, defaultName) => {
     ];
   }
 
-  logInfo('SELECT_OUTPUT', 'Opening save dialog', { defaultPath: defaultName || 'output.mp4', fileType: ext });
+  // Set default path to user's documents folder
+  const documentsPath = app.getPath('documents');
+  const fullDefaultPath = path.join(documentsPath, defaultName || 'output.mp4');
+
+  logInfo('SELECT_OUTPUT', 'Opening save dialog', { defaultPath: fullDefaultPath, fileType: ext });
   const result = await dialog.showSaveDialog(mainWindow, {
-    defaultPath: defaultName || 'output.mp4',
+    title: '파일 저장',
+    defaultPath: fullDefaultPath,
     filters: filters
   });
 
