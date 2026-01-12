@@ -395,6 +395,14 @@ let hasSilentAudio = false;  // Flag to track if current video has auto-generate
 // Mixing mode state
 let mixingTracks = [];  // Array of track objects: { id, type: 'vocal'|'instrument'|'effect', file, name, volume, pan }
 
+// Helper function to calculate relative volume for playback
+// Returns volume as 0-1 range based on max track volume
+function getRelativeTrackVolume(trackVolume) {
+  if (mixingTracks.length === 0) return 1;
+  const maxVolume = Math.max(...mixingTracks.map(t => t.volume), 100);
+  return trackVolume / maxVolume;
+}
+
 // Audio preview listener tracking
 let audioPreviewListener = null;  // Store preview timeupdate listener reference for explicit removal
 let skipTrimRangeListener = null;  // Store skip trim range listener reference for explicit removal
@@ -6782,13 +6790,16 @@ async function renderMixingTracksWaveform() {
       volumeInput.value = volumeInput.value.replace(/[^0-9]/g, '');
       let vol = parseInt(volumeInput.value) || 0;
       vol = Math.max(0, Math.min(200, vol));
+      // Temporarily update track volume to calculate relative volume
+      mixingTracks[index].volume = vol;
+      const relativeVol = getRelativeTrackVolume(vol);
       // Update playing audio volume immediately
       if (currentPlayingTrackIndex === index && mixingTrackAudio) {
-        mixingTrackAudio.volume = Math.min(vol, 200) / 100;
+        mixingTrackAudio.volume = relativeVol;
       }
       // Update sync playback audio volume
       if (syncPlaybackActive && syncAudioElements[index]) {
-        syncAudioElements[index].volume = Math.min(vol, 200) / 100;
+        syncAudioElements[index].volume = relativeVol;
       }
     };
 
@@ -6942,7 +6953,7 @@ function playMixingTrackWaveform(index) {
 
   // Create audio element and play
   mixingTrackAudio = new Audio();
-  mixingTrackAudio.volume = track.volume / 100;
+  mixingTrackAudio.volume = getRelativeTrackVolume(track.volume);
 
   const startPlayback = () => {
     // Seek to stored position if set
@@ -7062,7 +7073,7 @@ function seekMixingTrackWaveform(index, percent) {
     stopMixingTrackWaveform();
 
     mixingTrackAudio = new Audio();
-    mixingTrackAudio.volume = track.volume / 100;
+    mixingTrackAudio.volume = getRelativeTrackVolume(track.volume);
 
     const setupSeek = () => {
       if (mixingTrackAudio.duration) {
@@ -7104,7 +7115,7 @@ function updateMixingTrackVolumeWaveform(index, volume) {
     mixingTracks[index].volume = parseInt(volume);
 
     if (currentPlayingTrackIndex === index && mixingTrackAudio) {
-      mixingTrackAudio.volume = volume / 100;
+      mixingTrackAudio.volume = getRelativeTrackVolume(volume);
     }
 
     autoSaveMixingSession();
@@ -7167,7 +7178,7 @@ async function startSyncPlayback() {
     }
 
     const audio = new Audio();
-    audio.volume = track.volume / 100;
+    audio.volume = getRelativeTrackVolume(track.volume);
 
     // Try to load the audio file
     try {
@@ -7399,8 +7410,8 @@ function renderMixingTracksPreview() {
               <button onclick="playMixingTrack(${index})" style="background: ${currentPlayingTrackIndex === index ? '#dc2626' : '#667eea'}; color: white; border: none; border-radius: 50%; width: 28px; height: 28px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center;" title="${currentPlayingTrackIndex === index ? '정지' : '재생'}">
                 ${currentPlayingTrackIndex === index ? '⏹' : '▶'}
               </button>
-              <input type="range" min="0" max="200" value="${track.volume}"
-                onchange="updateMixingTrackVolume(${index}, this.value)"
+              <input type="range" id="track-volume-${index}" min="0" max="200" value="${track.volume}"
+                oninput="updateMixingTrackVolume(${index}, this.value)"
                 style="width: 50px; height: 4px; cursor: pointer;"
                 title="볼륨: ${track.volume}%">
               <button onclick="removeMixingTrack(${index})" style="background: transparent; color: #888; border: none; cursor: pointer; font-size: 14px; padding: 2px;" title="삭제">✕</button>
@@ -7453,7 +7464,7 @@ function playMixingTrack(index) {
 
   // Create audio element and play
   mixingTrackAudio = new Audio();
-  mixingTrackAudio.volume = track.volume / 100;
+  mixingTrackAudio.volume = getRelativeTrackVolume(track.volume);
 
   const startPlayback = () => {
     currentPlayingTrackIndex = index;
@@ -7529,7 +7540,7 @@ function seekMixingTrack(index, percent) {
     stopMixingTrack();
 
     mixingTrackAudio = new Audio();
-    mixingTrackAudio.volume = track.volume / 100;
+    mixingTrackAudio.volume = getRelativeTrackVolume(track.volume);
 
     const setupSeek = () => {
       if (mixingTrackAudio.duration) {
@@ -7575,15 +7586,19 @@ function updateMixingTrackVolume(index, volume) {
     mixingTracks[index].volume = parseInt(volume);
 
     // Update playing audio volume if this track is playing
+    // Uses relative volume based on max track volume for accurate preview
     if (currentPlayingTrackIndex === index && mixingTrackAudio) {
-      mixingTrackAudio.volume = volume / 100;
+      mixingTrackAudio.volume = getRelativeTrackVolume(volume);
+    }
+
+    // Update the volume slider title without re-rendering
+    const volumeSlider = document.getElementById(`track-volume-${index}`);
+    if (volumeSlider) {
+      volumeSlider.title = `볼륨: ${volume}%`;
     }
 
     // Auto-save session
     autoSaveMixingSession();
-
-    // Update the display
-    renderMixingTracksPreview();
   }
 }
 
