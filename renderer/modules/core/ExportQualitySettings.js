@@ -67,6 +67,24 @@ export const RESOLUTION_PRESETS = {
     width: 854,
     height: 480,
     description: '480p - SD'
+  },
+  '1080p-vertical': {
+    label: '1080x1920 (Full HD 세로)',
+    width: 1080,
+    height: 1920,
+    description: '1080p 세로 - 숏폼/릴스'
+  },
+  '720p-vertical': {
+    label: '720x1280 (HD 세로)',
+    width: 720,
+    height: 1280,
+    description: '720p 세로 - 숏폼/스토리'
+  },
+  '480p-vertical': {
+    label: '480x854 (SD 세로)',
+    width: 480,
+    height: 854,
+    description: '480p 세로'
   }
 };
 
