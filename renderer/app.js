@@ -2267,6 +2267,28 @@ function setupVideoControls() {
       const sliderValue = parseFloat(slider.value);
       const sliderMax = parseFloat(slider.max);
 
+      // If video is playing, seek to clicked position and pause immediately
+      if ((isVideoTrim || isTextMode) && video && !video.paused) {
+        const clickPercent = clickX / sliderWidth;
+        const targetTime = clickPercent * video.duration;
+        video.currentTime = Math.max(0, Math.min(targetTime, video.duration));
+        slider.value = clickPercent * 100;
+
+        // Update time display
+        const currentTimeDisplay = document.getElementById('current-time');
+        if (currentTimeDisplay) {
+          currentTimeDisplay.textContent = formatTime(video.currentTime);
+        }
+
+        // Pause playback
+        previewManager.pause();
+        previewManager.updatePlayPauseButton(false);
+        updateStatus(`이동: ${formatTime(video.currentTime)} (일시정지)`);
+
+        e.preventDefault();
+        return; // Don't start trim range selection
+      }
+
       // Check if clicking near the thumb
       const clickingThumb = isClickNearThumb(clickX, sliderValue, sliderMax, sliderWidth);
 
@@ -2454,6 +2476,13 @@ function setupVideoControls() {
           const currentTimeDisplay = document.getElementById('current-time');
           if (currentTimeDisplay) {
             currentTimeDisplay.textContent = formatTime(video.currentTime);
+          }
+
+          // Pause if playing (영상 자르기/텍스트 모드에서 클릭 시 일시정지)
+          if (!video.paused) {
+            previewManager.pause();
+            previewManager.updatePlayPauseButton(false);
+            updateStatus(`이동: ${formatTime(video.currentTime)} (일시정지)`);
           }
         }
       } else if (isAudioTrim) {
