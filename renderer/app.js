@@ -2259,8 +2259,9 @@ function setupVideoControls() {
     const isVideoTrim = activeTool === 'trim' && currentMode === 'video' && video.duration;
     const isAudioTrim = activeTool === 'trim-audio' && currentMode === 'audio' && audioFileInfo;
     const isTextMode = activeTool === 'text' && currentMode === 'video' && video.duration;
+    const isAddAudio = activeTool === 'add-audio' && currentMode === 'video' && video.duration;
 
-    if (isVideoTrim || isAudioTrim || isTextMode) {
+    if (isVideoTrim || isAudioTrim || isTextMode || isAddAudio) {
       const rect = slider.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const sliderWidth = rect.width;
@@ -2268,7 +2269,7 @@ function setupVideoControls() {
       const sliderMax = parseFloat(slider.max);
 
       // If video is playing, seek to clicked position and pause immediately
-      if ((isVideoTrim || isTextMode) && video && !video.paused) {
+      if ((isVideoTrim || isTextMode || isAddAudio) && video && !video.paused) {
         const clickPercent = clickX / sliderWidth;
         const targetTime = clickPercent * video.duration;
         video.currentTime = Math.max(0, Math.min(targetTime, video.duration));
@@ -2287,6 +2288,24 @@ function setupVideoControls() {
 
         e.preventDefault();
         return; // Don't start trim range selection
+      }
+
+      // For add-audio mode (paused), just seek to clicked position without trim range selection
+      if (isAddAudio && video && video.paused) {
+        const clickPercent = clickX / sliderWidth;
+        const targetTime = clickPercent * video.duration;
+        video.currentTime = Math.max(0, Math.min(targetTime, video.duration));
+        slider.value = clickPercent * 100;
+
+        // Update time display
+        const currentTimeDisplay = document.getElementById('current-time');
+        if (currentTimeDisplay) {
+          currentTimeDisplay.textContent = formatTime(video.currentTime);
+        }
+
+        updateStatus(`이동: ${formatTime(video.currentTime)}`);
+        e.preventDefault();
+        return;
       }
 
       // Check if clicking near the thumb
