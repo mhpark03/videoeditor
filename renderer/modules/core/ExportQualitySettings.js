@@ -119,11 +119,26 @@ export const FPS_PRESETS = {
   }
 };
 
+/**
+ * 스케일 모드 프리셋
+ */
+export const SCALE_MODE_PRESETS = {
+  pad: {
+    label: '레터박스 (패딩)',
+    description: '비율 유지, 검은 여백 추가'
+  },
+  crop: {
+    label: '확대 후 자르기',
+    description: '비율 유지, 가운데 기준 잘라내기'
+  }
+};
+
 // 현재 설정 저장
 let currentSettings = {
   quality: 'high',      // 기본값: 높음
   resolution: 'original', // 기본값: 원본
-  fps: 'original'       // 기본값: 원본
+  fps: 'original',      // 기본값: 원본
+  scaleMode: 'pad'      // 기본값: 패딩
 };
 
 // ============================================================================
@@ -192,8 +207,23 @@ export function createResolutionUI(container) {
           </option>
         `).join('')}
       </select>
+    </div>
+    <div class="property-group" id="scale-mode-group" style="display: ${currentSettings.resolution !== 'original' ? 'block' : 'none'};">
+      <label for="export-scale-mode">
+        <strong>비율 조정 방식</strong>
+        <span id="scale-mode-description" style="color: #888; font-size: 12px; margin-left: 8px;">
+          ${SCALE_MODE_PRESETS[currentSettings.scaleMode].description}
+        </span>
+      </label>
+      <select id="export-scale-mode" class="form-control" style="width: 100%; padding: 8px; margin-top: 4px;">
+        ${Object.entries(SCALE_MODE_PRESETS).map(([key, preset]) => `
+          <option value="${key}" ${key === currentSettings.scaleMode ? 'selected' : ''}>
+            ${preset.label}
+          </option>
+        `).join('')}
+      </select>
       <small style="color: #666; margin-top: 4px; display: block;">
-        원본보다 큰 해상도로는 변환되지 않습니다
+        패딩: 검은 여백 추가 / 자르기: 확대 후 가운데 기준 잘라내기
       </small>
     </div>
   `;
@@ -206,6 +236,20 @@ export function createResolutionUI(container) {
     resolutionSelect.addEventListener('change', (e) => {
       currentSettings.resolution = e.target.value;
       updateResolutionDescription();
+      // 해상도가 원본이 아닐 때만 스케일 모드 표시
+      const scaleModeGroup = document.getElementById('scale-mode-group');
+      if (scaleModeGroup) {
+        scaleModeGroup.style.display = e.target.value !== 'original' ? 'block' : 'none';
+      }
+    });
+  }
+
+  // 스케일 모드 이벤트 리스너
+  const scaleModeSelect = document.getElementById('export-scale-mode');
+  if (scaleModeSelect) {
+    scaleModeSelect.addEventListener('change', (e) => {
+      currentSettings.scaleMode = e.target.value;
+      updateScaleModeDescription();
     });
   }
 }
@@ -313,6 +357,16 @@ function updateFpsDescription() {
   }
 }
 
+/**
+ * 스케일 모드 설명 업데이트
+ */
+function updateScaleModeDescription() {
+  const descElement = document.getElementById('scale-mode-description');
+  if (descElement && SCALE_MODE_PRESETS[currentSettings.scaleMode]) {
+    descElement.textContent = SCALE_MODE_PRESETS[currentSettings.scaleMode].description;
+  }
+}
+
 // ============================================================================
 // Settings Getters
 // ============================================================================
@@ -342,17 +396,27 @@ export function getFpsSettings() {
 }
 
 /**
+ * 스케일 모드 설정 가져오기
+ * @returns {Object} 스케일 모드 설정 객체 { label, description }
+ */
+export function getScaleModeSettings() {
+  return SCALE_MODE_PRESETS[currentSettings.scaleMode];
+}
+
+/**
  * 모든 설정 가져오기
- * @returns {Object} { quality, resolution, fps, qualityPreset, resolutionPreset, fpsPreset }
+ * @returns {Object} { quality, resolution, fps, scaleMode, qualityPreset, resolutionPreset, fpsPreset, scaleModePreset }
  */
 export function getAllExportSettings() {
   return {
     quality: currentSettings.quality,
     resolution: currentSettings.resolution,
     fps: currentSettings.fps,
+    scaleMode: currentSettings.scaleMode,
     qualityPreset: QUALITY_PRESETS[currentSettings.quality],
     resolutionPreset: RESOLUTION_PRESETS[currentSettings.resolution],
-    fpsPreset: FPS_PRESETS[currentSettings.fps]
+    fpsPreset: FPS_PRESETS[currentSettings.fps],
+    scaleModePreset: SCALE_MODE_PRESETS[currentSettings.scaleMode]
   };
 }
 
@@ -371,7 +435,13 @@ export function getFFmpegEncodingArgs(options = {}) {
 
   // 해상도 필터 (원본이 아닌 경우)
   if (resolution.width && resolution.height) {
-    filters.push(`scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease`);
+    if (currentSettings.scaleMode === 'crop') {
+      // 확대 후 가운데 기준 잘라내기 (increase: 지정 해상도보다 크게 확대)
+      filters.push(`scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height},setsar=1`);
+    } else {
+      // 패딩 모드: 비율 유지하면서 검은 여백 추가
+      filters.push(`scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2,setsar=1`);
+    }
   }
 
   // FPS 필터 (원본이 아닌 경우)

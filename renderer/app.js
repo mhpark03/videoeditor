@@ -164,7 +164,8 @@ window.previewQuality = async function() {
       qualitySettings: {
         quality: settings.qualityPreset,
         resolution: settings.resolutionPreset,
-        fps: settings.fpsPreset
+        fps: settings.fpsPreset,
+        scaleMode: settings.scaleMode
       }
     });
 
@@ -2084,6 +2085,17 @@ function setupVideoControls() {
         const mediaElement = previewManager.getMediaElement();
 
         if (mediaElement && mediaElement.duration) {
+          // Sync to current slider position before playing
+          if (currentMode === 'video') {
+            // Video mode: slider is 0-100 (percent)
+            const targetTime = (slider.value / 100) * mediaElement.duration;
+            mediaElement.currentTime = targetTime;
+          } else if (currentMode === 'audio') {
+            // Audio mode: slider is 0-duration (seconds)
+            const targetTime = parseFloat(slider.value) || 0;
+            mediaElement.currentTime = Math.min(targetTime, mediaElement.duration);
+          }
+
           // If near the end (within 1 second), restart from beginning
           if (mediaElement.duration - mediaElement.currentTime < 1.0) {
             mediaElement.currentTime = 0;
@@ -6152,7 +6164,8 @@ async function executeApplyQuality() {
       qualitySettings: {
         quality: exportSettings.qualityPreset,
         resolution: exportSettings.resolutionPreset,
-        fps: exportSettings.fpsPreset
+        fps: exportSettings.fpsPreset,
+        scaleMode: exportSettings.scaleMode
       }
     });
 
@@ -10280,7 +10293,9 @@ async function executeExportVideoToS3() {
             inputPath: currentVideo,
             qualitySettings: {
               quality: exportSettings.qualityPreset,
-              resolution: exportSettings.resolutionPreset
+              resolution: exportSettings.resolutionPreset,
+              fps: exportSettings.fpsPreset,
+              scaleMode: exportSettings.scaleMode
             }
           });
 

@@ -1113,7 +1113,15 @@ ipcMain.handle('re-encode-video', async (event, options) => {
 
     // Add resolution scaling filter
     if (qualitySettings.resolution && qualitySettings.resolution.width && qualitySettings.resolution.height) {
-      videoFilters.push(`scale=${qualitySettings.resolution.width}:${qualitySettings.resolution.height}:force_original_aspect_ratio=decrease`);
+      const w = qualitySettings.resolution.width;
+      const h = qualitySettings.resolution.height;
+      if (qualitySettings.scaleMode === 'crop') {
+        // Crop mode: scale up to fill, then crop center
+        videoFilters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`);
+      } else {
+        // Pad mode: scale to fit, then add black padding
+        videoFilters.push(`scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`);
+      }
     }
 
     // Add FPS filter
