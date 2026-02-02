@@ -1927,6 +1927,233 @@ ipcMain.handle('add-audio', async (event, options) => {
   });
 });
 
+// Insert video into another video
+ipcMain.handle('insert-video', async (event, options) => {
+  let { videoPath, insertVideoPath, outputPath, insertStartTime, insertMode } = options;
+
+  // If outputPath is null, create temp file
+  if (!outputPath) {
+    const tempDir = os.tmpdir();
+    const timestamp = Date.now();
+    const fileName = path.basename(videoPath, path.extname(videoPath));
+    outputPath = path.join(tempDir, `${fileName}_inserted_${timestamp}.mp4`);
+  }
+
+  logInfo('INSERT_VIDEO_START', 'Starting video insertion', { videoPath, insertVideoPath, outputPath, insertStartTime, insertMode });
+
+  // Get video durations
+  const getVideoDuration = (filePath) => {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffprobePath, [
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        filePath
+      ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+      let output = '';
+      ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
+      ffprobe.on('close', () => { resolve(parseFloat(output.trim()) || 0); });
+    });
+  };
+
+  // Get video resolution for scaling
+  const getVideoResolution = (filePath) => {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffprobePath, [
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=width,height',
+        '-of', 'csv=p=0',
+        filePath
+      ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+      let output = '';
+      ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
+      ffprobe.on('close', () => {
+        const parts = output.trim().split(',');
+        resolve({ width: parseInt(parts[0]) || 1920, height: parseInt(parts[1]) || 1080 });
+      });
+    });
+  };
+
+  // Check if video has audio stream
+  const hasAudioStream = (filePath) => {
+    return new Promise((resolve) => {
+      const ffprobe = spawn(ffprobePath, [
+        '-v', 'error',
+        '-select_streams', 'a:0',
+        '-show_entries', 'stream=codec_type',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        filePath
+      ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+
+      let output = '';
+      ffprobe.stdout.on('data', (data) => { output += data.toString('utf8'); });
+      ffprobe.on('close', () => {
+        resolve(output.trim() === 'audio');
+      });
+    });
+  };
+
+  return new Promise(async (resolve, reject) => {
+    try {
+      const mainDuration = await getVideoDuration(videoPath);
+      const insertDuration = await getVideoDuration(insertVideoPath);
+      const mainResolution = await getVideoResolution(videoPath);
+      const insertHasAudio = await hasAudioStream(insertVideoPath);
+
+      logInfo('INSERT_VIDEO_INFO', 'Video info gathered', {
+        mainDuration,
+        insertDuration,
+        insertStartTime,
+        insertMode,
+        mainResolution,
+        insertHasAudio
+      });
+
+      let args;
+      const startTime = insertStartTime || 0;
+
+      // Audio source for insert video: use actual audio or generate silence
+      const insertAudioSource = insertHasAudio
+        ? `[1:a]asetpts=PTS-STARTPTS[a1]`
+        : `anullsrc=r=48000:cl=stereo:d=${insertDuration}[a1]`;
+
+      if (insertMode === 'overwrite') {
+        // Overwrite mode: Replace segment from startTime to startTime + insertDuration
+        const endTime = Math.min(startTime + insertDuration, mainDuration);
+
+        logInfo('INSERT_VIDEO_OVERWRITE', 'Overwrite mode', { startTime, endTime, insertDuration, insertHasAudio });
+
+        // Build filter based on start/end positions
+        let filterComplex;
+
+        if (startTime > 0.1 && endTime < mainDuration - 0.1) {
+          // Middle insertion: need all 3 parts
+          filterComplex =
+            `[0:v]trim=0:${startTime},setpts=PTS-STARTPTS,format=yuv420p[v0];` +
+            `[0:a]atrim=0:${startTime},asetpts=PTS-STARTPTS[a0];` +
+            `[1:v]scale=${mainResolution.width}:${mainResolution.height}:force_original_aspect_ratio=decrease,` +
+            `pad=${mainResolution.width}:${mainResolution.height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS,format=yuv420p[v1];` +
+            `${insertAudioSource};` +
+            `[0:v]trim=${endTime}:${mainDuration},setpts=PTS-STARTPTS,format=yuv420p[v2];` +
+            `[0:a]atrim=${endTime}:${mainDuration},asetpts=PTS-STARTPTS[a2];` +
+            `[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[outv][outa]`;
+        } else if (startTime <= 0.1) {
+          // Insert at beginning: only insert + end part
+          filterComplex =
+            `[1:v]scale=${mainResolution.width}:${mainResolution.height}:force_original_aspect_ratio=decrease,` +
+            `pad=${mainResolution.width}:${mainResolution.height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS,format=yuv420p[v1];` +
+            `${insertAudioSource};` +
+            `[0:v]trim=${endTime}:${mainDuration},setpts=PTS-STARTPTS,format=yuv420p[v2];` +
+            `[0:a]atrim=${endTime}:${mainDuration},asetpts=PTS-STARTPTS[a2];` +
+            `[v1][a1][v2][a2]concat=n=2:v=1:a=1[outv][outa]`;
+        } else {
+          // Insert at end: only start + insert part
+          filterComplex =
+            `[0:v]trim=0:${startTime},setpts=PTS-STARTPTS,format=yuv420p[v0];` +
+            `[0:a]atrim=0:${startTime},asetpts=PTS-STARTPTS[a0];` +
+            `[1:v]scale=${mainResolution.width}:${mainResolution.height}:force_original_aspect_ratio=decrease,` +
+            `pad=${mainResolution.width}:${mainResolution.height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS,format=yuv420p[v1];` +
+            `${insertAudioSource};` +
+            `[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]`;
+        }
+
+        args = [
+          '-i', videoPath,
+          '-i', insertVideoPath,
+          '-filter_complex', filterComplex,
+          '-map', '[outv]',
+          '-map', '[outa]',
+          '-c:v', 'libx264',
+          '-pix_fmt', 'yuv420p',
+          '-preset', 'fast',
+          '-crf', '18',
+          '-c:a', 'aac',
+          '-y',
+          outputPath
+        ];
+      } else {
+        // Insert mode (push): Insert video and push rest backward (total duration increases)
+        logInfo('INSERT_VIDEO_PUSH', 'Push mode', { startTime, insertDuration, mainDuration, insertHasAudio });
+
+        let filterComplex;
+
+        if (startTime > 0.1) {
+          // Middle or end insertion: need start + insert + rest
+          filterComplex =
+            `[0:v]trim=0:${startTime},setpts=PTS-STARTPTS,format=yuv420p[v0];` +
+            `[0:a]atrim=0:${startTime},asetpts=PTS-STARTPTS[a0];` +
+            `[1:v]scale=${mainResolution.width}:${mainResolution.height}:force_original_aspect_ratio=decrease,` +
+            `pad=${mainResolution.width}:${mainResolution.height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS,format=yuv420p[v1];` +
+            `${insertAudioSource};` +
+            `[0:v]trim=${startTime}:${mainDuration},setpts=PTS-STARTPTS,format=yuv420p[v2];` +
+            `[0:a]atrim=${startTime}:${mainDuration},asetpts=PTS-STARTPTS[a2];` +
+            `[v0][a0][v1][a1][v2][a2]concat=n=3:v=1:a=1[outv][outa]`;
+        } else {
+          // Insert at beginning: insert + entire original
+          filterComplex =
+            `[1:v]scale=${mainResolution.width}:${mainResolution.height}:force_original_aspect_ratio=decrease,` +
+            `pad=${mainResolution.width}:${mainResolution.height}:(ow-iw)/2:(oh-ih)/2,setpts=PTS-STARTPTS,format=yuv420p[v1];` +
+            `${insertAudioSource};` +
+            `[0:v]setpts=PTS-STARTPTS,format=yuv420p[v0];` +
+            `[0:a]asetpts=PTS-STARTPTS[a0];` +
+            `[v1][a1][v0][a0]concat=n=2:v=1:a=1[outv][outa]`;
+        }
+
+        args = [
+          '-i', videoPath,
+          '-i', insertVideoPath,
+          '-filter_complex', filterComplex,
+          '-map', '[outv]',
+          '-map', '[outa]',
+          '-c:v', 'libx264',
+          '-pix_fmt', 'yuv420p',
+          '-preset', 'fast',
+          '-crf', '18',
+          '-c:a', 'aac',
+          '-y',
+          outputPath
+        ];
+      }
+
+      logInfo('INSERT_VIDEO_FFMPEG', 'Running FFmpeg', { args: args.join(' ') });
+
+      const ffmpeg = spawn(ffmpegPath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+
+      let errorOutput = '';
+
+      ffmpeg.stderr.on('data', (data) => {
+        const message = data.toString('utf8');
+        errorOutput += message;
+        mainWindow.webContents.send('ffmpeg-progress', message);
+      });
+
+      ffmpeg.on('close', (code) => {
+        if (code === 0) {
+          logInfo('INSERT_VIDEO_SUCCESS', 'Video insertion completed', { outputPath });
+          resolve({ success: true, outputPath });
+        } else {
+          logError('INSERT_VIDEO_FAILED', 'Video insertion failed', { error: errorOutput });
+          reject(new Error(errorOutput || 'FFmpeg failed'));
+        }
+      });
+
+      ffmpeg.on('error', (err) => {
+        logError('INSERT_VIDEO_ERROR', 'FFmpeg spawn error', { error: err.message });
+        reject(new Error(`FFmpeg error: ${err.message}`));
+      });
+    } catch (error) {
+      logError('INSERT_VIDEO_ERROR', 'Error during video insertion setup', { error: error.message });
+      reject(error);
+    }
+  });
+});
+
 // Apply video filter
 ipcMain.handle('apply-filter', async (event, options) => {
   let { inputPath, outputPath, filterName, filterParams } = options;

@@ -253,6 +253,7 @@ window.executeTrimAudioFile = function() { return executeTrimAudioFile(); };
 window.executeDeleteAudioRange = function() { return executeDeleteAudioRange(); };
 window.executeAudioVolume = function() { return executeAudioVolume(); };
 window.executeAddAudio = function() { return executeAddAudio(); };
+window.executeAddVideo = function() { return executeAddVideo(); };
 window.executeVolumeAdjust = function() { return executeVolumeAdjust(); };
 window.executeFilter = function() { return executeFilter(); };
 window.executeAddText = function() { return executeAddText(); };
@@ -290,6 +291,10 @@ window.closeRunwayVideoS3Modal = RunwayModule.closeRunwayVideoS3Modal;  // Use m
 
 // Selection operations exports
 window.selectAudioFile = function() { return selectAudioFile(); };
+window.selectInsertVideoFile = function() { return selectInsertVideoFile(); };
+window.setInsertVideoStartFromCurrentTime = function() { return setInsertVideoStartFromCurrentTime(); };
+window.previewInsertVideoStartTime = function() { return previewInsertVideoStartTime(); };
+window.updateInsertVideoRangeOverlay = function() { return updateInsertVideoRangeOverlay(); };
 window.selectS3Video = function() { return selectS3Video(); };
 window.selectLocalVideoFile = function() { return selectLocalVideoFile(); };
 window.selectRunwayVideoImageSource = RunwayModule.selectRunwayVideoImageSource;  // Use module
@@ -506,8 +511,8 @@ function selectTool(tool) {
     }
   }
 
-  // Hide audio range overlay when switching tools
-  if (tool !== 'add-audio') {
+  // Hide audio range overlay when switching tools (except add-audio and add-video)
+  if (tool !== 'add-audio' && tool !== 'add-video') {
     const audioOverlay = document.getElementById('audio-range-overlay');
     if (audioOverlay) {
       audioOverlay.style.display = 'none';
@@ -846,6 +851,39 @@ function showToolProperties(tool) {
         <button class="property-btn" onclick="executeAddAudio()">오디오 추가</button>
       `;
       break;
+
+    case 'add-video': {
+      const mainVideoDuration = videoInfo ? parseFloat(videoInfo.format.duration) : 100;
+      propertiesPanel.innerHTML = `
+        <div class="property-group">
+          <label>삽입할 영상</label>
+          <button class="property-btn secondary" onclick="selectInsertVideoFile()">영상 선택</button>
+          <div id="selected-insert-video" style="margin-top: 10px; color: #aaa; font-size: 13px;"></div>
+        </div>
+        <div class="property-group">
+          <label>삽입 위치 (초)</label>
+          <div style="display: flex; gap: 5px; align-items: center;">
+            <input type="number" id="video-insert-time" min="0" max="${mainVideoDuration}" step="0.1" value="0" oninput="updateInsertVideoRangeOverlay()" style="flex: 1;">
+            <button class="property-btn secondary" onclick="setInsertVideoStartFromCurrentTime()" style="width: auto; padding: 8px 12px; margin: 0;" title="현재 재생 위치를 삽입 위치로">🔄</button>
+            <button class="property-btn secondary" onclick="previewInsertVideoStartTime()" style="width: auto; padding: 8px 12px; margin: 0;" title="삽입 위치로 이동">▶️</button>
+          </div>
+          <small style="color: #888; font-size: 11px;">영상이 삽입될 위치 (최대: ${mainVideoDuration.toFixed(2)}초)</small>
+        </div>
+        <div class="property-group">
+          <label>삽입 모드</label>
+          <select id="video-insert-mode" style="width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; border-radius: 5px; color: #e0e0e0; font-size: 14px;">
+            <option value="push">삽입 (기존 영상 뒤로 밀기)</option>
+            <option value="overwrite">덮어쓰기 (기존 영상 대체)</option>
+          </select>
+          <small style="color: #888; font-size: 11px; display: block; margin-top: 5px;">
+            • 삽입: 지정 위치에 영상을 삽입하고 나머지는 뒤로 밀림 (전체 길이 증가)<br>
+            • 덮어쓰기: 삽입 영상 길이만큼 기존 영상을 제거하고 새 영상으로 대체
+          </small>
+        </div>
+        <button class="property-btn" onclick="executeAddVideo()">영상 삽입</button>
+      `;
+      break;
+    }
 
     case 'extract-audio':
       // Use video metadata as default values if available
@@ -2260,8 +2298,9 @@ function setupVideoControls() {
     const isAudioTrim = activeTool === 'trim-audio' && currentMode === 'audio' && audioFileInfo;
     const isTextMode = activeTool === 'text' && currentMode === 'video' && video.duration;
     const isAddAudio = activeTool === 'add-audio' && currentMode === 'video' && video.duration;
+    const isAddVideo = activeTool === 'add-video' && currentMode === 'video' && video.duration;
 
-    if (isVideoTrim || isAudioTrim || isTextMode || isAddAudio) {
+    if (isVideoTrim || isAudioTrim || isTextMode || isAddAudio || isAddVideo) {
       const rect = slider.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const sliderWidth = rect.width;
@@ -2269,7 +2308,7 @@ function setupVideoControls() {
       const sliderMax = parseFloat(slider.max);
 
       // If video is playing, seek to clicked position and pause immediately
-      if ((isVideoTrim || isTextMode || isAddAudio) && video && !video.paused) {
+      if ((isVideoTrim || isTextMode || isAddAudio || isAddVideo) && video && !video.paused) {
         const clickPercent = clickX / sliderWidth;
         const targetTime = clickPercent * video.duration;
         video.currentTime = Math.max(0, Math.min(targetTime, video.duration));
@@ -2290,8 +2329,8 @@ function setupVideoControls() {
         return; // Don't start trim range selection
       }
 
-      // For add-audio mode (paused), just seek to clicked position without trim range selection
-      if (isAddAudio && video && video.paused) {
+      // For add-audio/add-video mode (paused), just seek to clicked position without trim range selection
+      if ((isAddAudio || isAddVideo) && video && video.paused) {
         const clickPercent = clickX / sliderWidth;
         const targetTime = clickPercent * video.duration;
         video.currentTime = Math.max(0, Math.min(targetTime, video.duration));
@@ -5597,6 +5636,10 @@ let selectedAudioFile = null;
 // Audio file duration
 let selectedAudioDuration = 0;
 
+// Add video (insert video)
+let selectedInsertVideo = null;
+let selectedInsertVideoDuration = 0;
+
 // Audio preview element for playback
 let audioPreviewElement = null;
 
@@ -5810,6 +5853,158 @@ async function executeAddAudio() {
   } catch (error) {
     hideProgress();
     handleError('오디오 추가', error, '오디오 추가에 실패했습니다.');
+  }
+}
+
+// ============================================================================
+// Video Insertion Functions
+// ============================================================================
+
+// Select video file to insert
+async function selectInsertVideoFile() {
+  selectedInsertVideo = await window.electronAPI.selectVideo();
+  if (selectedInsertVideo) {
+    document.getElementById('selected-insert-video').textContent = selectedInsertVideo.split('\\').pop();
+    // Get video duration
+    getInsertVideoDuration(selectedInsertVideo);
+  }
+}
+
+// Get insert video duration
+async function getInsertVideoDuration(videoPath) {
+  try {
+    const insertVideoInfo = await window.electronAPI.getVideoInfo(videoPath);
+    if (insertVideoInfo && insertVideoInfo.format && insertVideoInfo.format.duration) {
+      selectedInsertVideoDuration = parseFloat(insertVideoInfo.format.duration);
+
+      // Update selected video display with duration
+      const selectedVideoDiv = document.getElementById('selected-insert-video');
+      if (selectedVideoDiv) {
+        selectedVideoDiv.textContent = `${videoPath.split('\\').pop()} (${formatTime(selectedInsertVideoDuration)})`;
+      }
+
+      // Update video range overlay
+      updateInsertVideoRangeOverlay();
+
+      updateStatus(`삽입 영상 선택: ${formatTime(selectedInsertVideoDuration)}`);
+    }
+  } catch (error) {
+    console.error('Failed to get insert video duration:', error);
+    selectedInsertVideoDuration = 0;
+  }
+}
+
+// Update video range overlay on timeline
+function updateInsertVideoRangeOverlay() {
+  const overlay = document.getElementById('audio-range-overlay'); // Reuse audio range overlay
+  const insertTimeInput = document.getElementById('video-insert-time');
+
+  if (!overlay || !videoInfo) {
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
+    return;
+  }
+
+  if (!selectedInsertVideo || selectedInsertVideoDuration === 0) {
+    overlay.style.display = 'none';
+    return;
+  }
+
+  // Show overlay only in add-video mode
+  if (activeTool === 'add-video' && insertTimeInput) {
+    overlay.style.display = 'block';
+    overlay.style.background = 'rgba(76, 175, 80, 0.3)'; // Green for video
+
+    const videoDuration = parseFloat(videoInfo.format.duration);
+    const insertTime = parseFloat(insertTimeInput.value) || 0;
+    const endTime = Math.min(insertTime + selectedInsertVideoDuration, videoDuration);
+
+    // Calculate percentages
+    const startPercent = (insertTime / videoDuration) * 100;
+    const endPercent = (endTime / videoDuration) * 100;
+    const widthPercent = endPercent - startPercent;
+
+    // Update overlay position and size
+    overlay.style.left = `${startPercent}%`;
+    overlay.style.width = `${widthPercent}%`;
+  } else if (activeTool !== 'add-audio') {
+    overlay.style.display = 'none';
+  }
+}
+
+// Set video insert time from current playback position
+function setInsertVideoStartFromCurrentTime() {
+  const video = document.getElementById('preview-video');
+  const insertTimeInput = document.getElementById('video-insert-time');
+
+  if (video && insertTimeInput) {
+    insertTimeInput.value = video.currentTime.toFixed(2);
+    updateInsertVideoRangeOverlay();
+    updateStatus(`삽입 위치 설정: ${formatTime(video.currentTime)}`);
+  }
+}
+
+// Preview video at insert start time
+function previewInsertVideoStartTime() {
+  const video = document.getElementById('preview-video');
+  const insertTimeInput = document.getElementById('video-insert-time');
+
+  if (video && insertTimeInput) {
+    const startTime = parseFloat(insertTimeInput.value) || 0;
+    video.currentTime = startTime;
+    updateStatus(`삽입 위치로 이동: ${formatTime(startTime)}`);
+  }
+}
+
+// Execute video insertion
+async function executeAddVideo() {
+  if (!currentVideo) {
+    alert('먼저 영상을 가져와주세요.');
+    return;
+  }
+
+  if (!selectedInsertVideo) {
+    alert('삽입할 영상을 선택해주세요.');
+    return;
+  }
+
+  const insertTimeInput = document.getElementById('video-insert-time');
+  const insertTime = insertTimeInput ? parseFloat(insertTimeInput.value) || 0 : 0;
+  const insertMode = document.getElementById('video-insert-mode').value;
+
+  showProgress();
+  updateProgress(0, '영상 삽입 중...');
+
+  // Save previous video file path for cleanup
+  const previousVideo = currentVideo;
+
+  try {
+    const result = await window.electronAPI.insertVideo({
+      videoPath: currentVideo,
+      insertVideoPath: selectedInsertVideo,
+      outputPath: null, // null means create temp file
+      insertStartTime: insertTime,
+      insertMode: insertMode
+    });
+
+    hideProgress();
+    const modeText = insertMode === 'overwrite' ? '덮어쓰기' : '삽입';
+    alert(`영상 ${modeText} 완료!\n\n편집된 내용은 임시 저장되었습니다.\n최종 저장하려면 "비디오 내보내기"를 사용하세요.`);
+    loadVideo(result.outputPath);
+    currentVideo = result.outputPath;
+
+    // Reset selected insert video
+    selectedInsertVideo = null;
+    selectedInsertVideoDuration = 0;
+
+    // Delete previous temp file if it exists
+    if (previousVideo && previousVideo !== result.outputPath) {
+      await window.electronAPI.deleteTempFile(previousVideo);
+    }
+  } catch (error) {
+    hideProgress();
+    handleError('영상 삽입', error, '영상 삽입에 실패했습니다.');
   }
 }
 
@@ -11339,6 +11534,10 @@ function updateModeUI() {
         <button class="tool-btn" data-tool="merge">
           <span class="icon">🔗</span>
           영상 병합
+        </button>
+        <button class="tool-btn" data-tool="add-video">
+          <span class="icon">🎬</span>
+          영상 삽입
         </button>
       </div>
       <div class="tool-section">
