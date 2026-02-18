@@ -4231,6 +4231,56 @@ ipcMain.handle('ensure-video-has-audio', async (event, videoPath) => {
   });
 });
 
+// Re-encode video audio to fix corrupted audio streams (MEDIA_ERR_DECODE)
+ipcMain.handle('fix-video-audio', async (event, videoPath) => {
+  logInfo('FIX_AUDIO_START', 'Re-encoding audio to fix decode errors', { videoPath });
+
+  const os = require('os');
+  const tempDir = os.tmpdir();
+  const timestamp = Date.now();
+  const fileName = path.basename(videoPath, path.extname(videoPath));
+  const outputPath = path.join(tempDir, `${fileName}_fixed_${timestamp}.mp4`);
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', videoPath,
+      '-c:v', 'copy',        // Keep video as-is
+      '-c:a', 'aac',         // Re-encode audio
+      '-b:a', '128k',
+      '-ac', '2',
+      '-ar', '44100',
+      '-movflags', '+faststart',
+      '-y',
+      outputPath
+    ];
+
+    const ffmpeg = spawn(ffmpegPath, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true
+    });
+
+    let errorOutput = '';
+    ffmpeg.stderr.on('data', (data) => {
+      errorOutput += data.toString('utf8');
+    });
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0) {
+        logInfo('FIX_AUDIO_SUCCESS', 'Audio re-encoded successfully', { outputPath });
+        resolve(outputPath);
+      } else {
+        logError('FIX_AUDIO_FAILED', 'Audio re-encoding failed', { error: errorOutput });
+        reject(new Error(errorOutput || 'FFmpeg audio fix failed'));
+      }
+    });
+
+    ffmpeg.on('error', (err) => {
+      logError('FIX_AUDIO_ERROR', 'FFmpeg spawn error', { error: err.message });
+      reject(new Error(`FFmpeg error: ${err.message}`));
+    });
+  });
+});
+
 // Generate TTS audio using Google Cloud Text-to-Speech SDK
 ipcMain.handle('generate-tts-direct', async (event, params) => {
   const { text, title, languageCode, voiceName, gender, speakingRate, pitch, savePath } = params;

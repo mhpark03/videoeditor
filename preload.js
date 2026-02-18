@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mixAudioTracks: (options) => ipcRenderer.invoke('mix-audio-tracks', options),
   deleteTempFile: (filePath) => ipcRenderer.invoke('delete-temp-file', filePath),
   ensureVideoHasAudio: (videoPath) => ipcRenderer.invoke('ensure-video-has-audio', videoPath),
+  fixVideoAudio: (videoPath) => ipcRenderer.invoke('fix-video-audio', videoPath),
 
   // Progress listener
   onFFmpegProgress: (callback) => {

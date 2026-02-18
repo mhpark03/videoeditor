@@ -2109,29 +2109,42 @@ function setupVideoControls() {
   const slider = document.getElementById('timeline-slider');
   const currentTimeDisplay = document.getElementById('current-time');
 
+
+  let isPlayPending = false; // Guard against rapid clicks during play startup
+
   if (playPauseBtn) {
     playPauseBtn.addEventListener('click', () => {
       const isCurrentlyPlaying = previewManager.isPlaying();
 
       if (isCurrentlyPlaying) {
         // Pause
+        isPlayPending = false;
         previewManager.pause();
         previewManager.updatePlayPauseButton(false);
         updateStatus('일시정지');
       } else {
+        // Guard: ignore click if play is already in progress
+        if (isPlayPending) {
+          console.log('[PlayPause] Play already pending, ignoring click');
+          return;
+        }
+
         // Play
         const mediaElement = previewManager.getMediaElement();
 
         if (mediaElement && mediaElement.duration) {
-          // Sync to current slider position before playing
+          // Sync to current slider position before playing (only if position differs)
           if (currentMode === 'video') {
-            // Video mode: slider is 0-100 (percent)
             const targetTime = (slider.value / 100) * mediaElement.duration;
-            mediaElement.currentTime = targetTime;
+            if (Math.abs(mediaElement.currentTime - targetTime) > 0.1) {
+              mediaElement.currentTime = targetTime;
+            }
           } else if (currentMode === 'audio') {
-            // Audio mode: slider is 0-duration (seconds)
             const targetTime = parseFloat(slider.value) || 0;
-            mediaElement.currentTime = Math.min(targetTime, mediaElement.duration);
+            const clampedTarget = Math.min(targetTime, mediaElement.duration);
+            if (Math.abs(mediaElement.currentTime - clampedTarget) > 0.1) {
+              mediaElement.currentTime = clampedTarget;
+            }
           }
 
           // If near the end (within 1 second), restart from beginning
@@ -2178,12 +2191,25 @@ function setupVideoControls() {
           }
         }
 
+        if (!mediaElement) {
+          console.warn('[PlayPause] No media element available');
+          return;
+        }
+
+        isPlayPending = true;
+        previewManager.updatePlayPauseButton(true);
         previewManager.play()
           .then(() => {
-            previewManager.updatePlayPauseButton(true);
+            isPlayPending = false;
             updateStatus('재생 중...');
           })
           .catch(err => {
+            isPlayPending = false;
+            if (err.name === 'AbortError') {
+              console.log('[Play] play() interrupted by pause() - ignored');
+              previewManager.updatePlayPauseButton(false);
+              return;
+            }
             console.error('재생 오류:', err);
             updateStatus('재생 실패: ' + err.message);
             previewManager.updatePlayPauseButton(false);
@@ -2799,6 +2825,25 @@ async function loadVideo(path, options = {}) {
     const video = previewManager.getMediaElement();
     if (video) {
       video.volume = 1.0;
+
+      // Detect MEDIA_ERR_DECODE and auto-fix corrupted audio
+      if (!options._isRetryAfterFix) {
+        video.addEventListener('error', async () => {
+          if (video.error && video.error.code === 3) {
+            console.warn('[loadVideo] MEDIA_ERR_DECODE detected, re-encoding audio...', video.error.message);
+            updateStatus('오디오 디코딩 오류 감지 - 자동 수정 중...');
+            try {
+              const fixedPath = await window.electronAPI.fixVideoAudio(path);
+              console.log('[loadVideo] Audio fixed, reloading:', fixedPath);
+              currentVideo = fixedPath;
+              loadVideo(fixedPath, { ...options, _isRetryAfterFix: true });
+            } catch (fixErr) {
+              console.error('[loadVideo] Audio fix failed:', fixErr);
+              updateStatus('오디오 수정 실패 - 원본으로 계속 진행');
+            }
+          }
+        }, { once: true });
+      }
     }
 
     // Get video info
