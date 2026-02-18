@@ -130,6 +130,10 @@ export const SCALE_MODE_PRESETS = {
   crop: {
     label: '확대 후 자르기',
     description: '비율 유지, 가운데 기준 잘라내기'
+  },
+  blur: {
+    label: '블러 배경',
+    description: '비율 유지, 블러 처리된 영상으로 여백 채우기'
   }
 };
 
@@ -223,7 +227,7 @@ export function createResolutionUI(container) {
         `).join('')}
       </select>
       <small style="color: #666; margin-top: 4px; display: block;">
-        패딩: 검은 여백 추가 / 자르기: 확대 후 가운데 기준 잘라내기
+        패딩: 검은 여백 / 자르기: 확대 후 잘라내기 / 블러: 블러 배경 채우기
       </small>
     </div>
   `;
@@ -432,25 +436,39 @@ export function getFFmpegEncodingArgs(options = {}) {
 
   const args = [];
   const filters = [];
+  let useFilterComplex = false;
+  let filterComplexStr = '';
 
   // 해상도 필터 (원본이 아닌 경우)
   if (resolution.width && resolution.height) {
-    if (currentSettings.scaleMode === 'crop') {
+    const w = resolution.width;
+    const h = resolution.height;
+    if (currentSettings.scaleMode === 'blur') {
+      // 블러 배경 모드: 확대+블러 배경 위에 원본 비율 영상 오버레이
+      useFilterComplex = true;
+      filterComplexStr = `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},gblur=sigma=20[bg];[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+    } else if (currentSettings.scaleMode === 'crop') {
       // 확대 후 가운데 기준 잘라내기 (increase: 지정 해상도보다 크게 확대)
-      filters.push(`scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=increase,crop=${resolution.width}:${resolution.height},setsar=1`);
+      filters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`);
     } else {
       // 패딩 모드: 비율 유지하면서 검은 여백 추가
-      filters.push(`scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2,setsar=1`);
+      filters.push(`scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1`);
     }
   }
 
   // FPS 필터 (원본이 아닌 경우)
   if (fpsPreset.fps) {
-    filters.push(`fps=${fpsPreset.fps}`);
+    if (useFilterComplex) {
+      filterComplexStr += `,fps=${fpsPreset.fps}`;
+    } else {
+      filters.push(`fps=${fpsPreset.fps}`);
+    }
   }
 
   // 필터 적용
-  if (filters.length > 0) {
+  if (useFilterComplex) {
+    args.push('-filter_complex', filterComplexStr);
+  } else if (filters.length > 0) {
     args.push('-vf', filters.join(','));
   }
 

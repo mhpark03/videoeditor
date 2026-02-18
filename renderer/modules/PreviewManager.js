@@ -21,6 +21,7 @@ class PreviewManager {
     this.currentPreviewType = 'none'; // 'video', 'audio', 'image', 'none'
     this.currentMediaElement = null; // Current playable media element
     this.initialized = false;
+    this._bgSyncController = null; // AbortController for blur bg sync events
   }
 
   // Initialize - must be called after DOM is ready
@@ -28,6 +29,7 @@ class PreviewManager {
     if (this.initialized) return;
 
     this.elements.video = document.getElementById('preview-video');
+    this.elements.videoBg = document.getElementById('preview-video-bg');
     this.elements.audio = document.getElementById('preview-audio');
     this.elements.audioPlaceholder = document.getElementById('audio-placeholder');
     this.elements.audioFilename = document.getElementById('audio-filename');
@@ -50,6 +52,19 @@ class PreviewManager {
   // Hide all preview elements
   hideAll() {
     if (!this.initialized) this.init();
+
+    // Clean up blur background sync
+    if (this._bgSyncController) {
+      this._bgSyncController.abort();
+      this._bgSyncController = null;
+    }
+
+    // Hide and clear blur background video
+    if (this.elements.videoBg) {
+      this.elements.videoBg.style.display = 'none';
+      this.elements.videoBg.pause();
+      this.elements.videoBg.src = '';
+    }
 
     // Hide and clear video
     if (this.elements.video) {
@@ -112,6 +127,30 @@ class PreviewManager {
     this.elements.video.style.objectFit = options.objectFit || 'contain';
     this.elements.video.src = src;
     this.elements.video.load();
+
+    // Set up blur background video
+    if (this.elements.videoBg) {
+      if (this._bgSyncController) this._bgSyncController.abort();
+      this._bgSyncController = new AbortController();
+      const signal = this._bgSyncController.signal;
+
+      this.elements.videoBg.src = src;
+      this.elements.videoBg.style.display = 'block';
+      this.elements.videoBg.muted = true;
+      this.elements.videoBg.load();
+
+      const mainVideo = this.elements.video;
+      const bgVideo = this.elements.videoBg;
+
+      mainVideo.addEventListener('play', () => bgVideo.play().catch(() => {}), { signal });
+      mainVideo.addEventListener('pause', () => bgVideo.pause(), { signal });
+      mainVideo.addEventListener('seeked', () => { bgVideo.currentTime = mainVideo.currentTime; }, { signal });
+      mainVideo.addEventListener('timeupdate', () => {
+        if (Math.abs(bgVideo.currentTime - mainVideo.currentTime) > 0.3) {
+          bgVideo.currentTime = mainVideo.currentTime;
+        }
+      }, { signal });
+    }
 
     // Show video info if requested
     if (options.showInfo !== false && this.elements.videoInfo) {

@@ -1110,12 +1110,18 @@ ipcMain.handle('re-encode-video', async (event, options) => {
 
     // Build video filters array
     const videoFilters = [];
+    let useFilterComplex = false;
+    let filterComplexStr = '';
 
     // Add resolution scaling filter
     if (qualitySettings.resolution && qualitySettings.resolution.width && qualitySettings.resolution.height) {
       const w = qualitySettings.resolution.width;
       const h = qualitySettings.resolution.height;
-      if (qualitySettings.scaleMode === 'crop') {
+      if (qualitySettings.scaleMode === 'blur') {
+        // Blur background mode: blurred enlarged video as background, original aspect ratio video overlaid on top
+        useFilterComplex = true;
+        filterComplexStr = `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},gblur=sigma=20[bg];[0:v]scale=${w}:${h}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1`;
+      } else if (qualitySettings.scaleMode === 'crop') {
         // Crop mode: scale up to fill, then crop center
         videoFilters.push(`scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`);
       } else {
@@ -1126,11 +1132,17 @@ ipcMain.handle('re-encode-video', async (event, options) => {
 
     // Add FPS filter
     if (qualitySettings.fps && qualitySettings.fps.fps) {
-      videoFilters.push(`fps=${qualitySettings.fps.fps}`);
+      if (useFilterComplex) {
+        filterComplexStr += `,fps=${qualitySettings.fps.fps}`;
+      } else {
+        videoFilters.push(`fps=${qualitySettings.fps.fps}`);
+      }
     }
 
     // Apply video filters if any
-    if (videoFilters.length > 0) {
+    if (useFilterComplex) {
+      args.push('-filter_complex', filterComplexStr);
+    } else if (videoFilters.length > 0) {
       args.push('-vf', videoFilters.join(','));
     }
 
